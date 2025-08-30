@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Husband–Wife Randomizer</title>
+  <style>
+    :root{ --bg:#0f1220; --card:#171a2b; --accent:#5eead4; --text:#e5e7eb; --muted:#9ca3af; }
+    html,body{height:100%;-webkit-text-size-adjust:100%}
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:radial-gradient(1200px 800px at 50% -10%,#1b213a 0%,var(--bg) 60%);color:var(--text);display:grid;place-items:center}
+    .app{width:min(520px,94vw);background:linear-gradient(180deg,#1a1f34 0%,var(--card) 100%);border:1px solid rgba(255,255,255,.06);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05);padding:20px 20px 16px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+    h1{font-size:clamp(18px,3.5vw,22px);margin:0;letter-spacing:.2px}
+    .muted{color:var(--muted);font-size:12px}
+    .display{display:grid;place-items:center;height:42vh;max-height:360px;min-height:260px;border-radius:20px;background:radial-gradient(800px 400px at 50% -10%,#212846 0%,#131729 65%);border:1px solid rgba(255,255,255,.06);position:relative;overflow:hidden;margin:8px 0 14px}
+    .word{font-size:clamp(56px,10vw,120px);line-height:1.05;text-align:center;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;filter:drop-shadow(0 10px 25px rgba(0,0,0,.45))}
+    .shake{animation:shake 480ms cubic-bezier(.36,.07,.19,.97) both}
+    @keyframes shake{10%,90%{transform:translate3d(-1px,0,0) rotate(-1deg)}20%,80%{transform:translate3d(2px,0,0) rotate(1deg)}30%,50%,70%{transform:translate3d(-3px,0,0) rotate(-2deg)}40%,60%{transform:translate3d(3px,0,0) rotate(2deg)}}
+    .controls{display:flex;gap:10px;justify-content:center;margin:8px 0 2px}
+    button{-webkit-tap-highlight-color:transparent;appearance:none;border:0;cursor:pointer;padding:14px 18px;border-radius:14px;background:linear-gradient(180deg,#0ea5a0,#0b8e86);color:#051517;font-weight:700;letter-spacing:.3px;font-size:16px;box-shadow:0 8px 30px rgba(94,234,212,.35),inset 0 1px 0 rgba(255,255,255,.3)}
+    button:active{transform:translateY(1px)}
+    .ghost{background:#232846;color:var(--text);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+    .history{margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .rolls{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{padding:8px 10px;border-radius:10px;background:#1f2542;border:1px solid rgba(255,255,255,.06);font-weight:700}
+    footer{margin-top:10px;text-align:center;font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="Husband–Wife random picker">
+    <header>
+      <h1>Husband–Wife Picker</h1>
+      <span class="muted">Tap to pick randomly</span>
+    </header>
+
+    <div class="display" aria-live="polite" aria-atomic="true">
+      <div id="word" class="word" role="img" aria-label="current selection">—</div>
+    </div>
+
+    <div class="controls">
+      <button id="pickBtn" aria-label="Pick now" onclick="if(window.pick) pick();">Pick ✨</button>
+      <button id="resetBtn" class="ghost" aria-label="Reset history">Reset</button>
+    </div>
+
+    <div class="history" aria-label="history of recent picks">
+      <div class="row">
+        <h2 style="font-size:13px;margin:0;color:var(--muted);font-weight:600;letter-spacing:.3px">Recent</h2>
+        <span class="muted" id="stats">—</span>
+      </div>
+      <div id="rolls" class="rolls"></div>
+    </div>
+
+    <footer>Tip: Use Safari → Share → Add to Home Screen to install.</footer>
+  </div>
+
+  <script>
+    (function(){
+      var choices = ["Husband","Wife"];
+      var wordEl = document.getElementById('word');
+      var pickBtn = document.getElementById('pickBtn');
+      var resetBtn = document.getElementById('resetBtn');
+      var rollsEl = document.getElementById('rolls');
+      var statsEl = document.getElementById('stats');
+      var history = []; var limit = 12;
+
+      function rand(){
+        try{ if (window.crypto && crypto.getRandomValues){ var a=new Uint32Array(1); crypto.getRandomValues(a); return a[0] % choices.length; } }catch(e){}
+        return Math.floor(Math.random()*choices.length);
+      }
+      function vibrate(ms){ if (navigator.vibrate){ try{ navigator.vibrate(ms);}catch(e){} } }
+      function updateStats(){ if(!history.length){ statsEl.textContent='—'; return;} var hCount=history.filter(x=>x==='Husband').length; var wCount=history.length-hCount; statsEl.textContent = 'H:'+hCount+' · W:'+wCount; }
+      function renderHistory(){ rollsEl.innerHTML=''; history.slice(0,limit).forEach(function(s){ var d=document.createElement('div'); d.className='chip'; d.textContent=s; rollsEl.appendChild(d); }); updateStats(); }
+
+      window.pick = pick; function pick(){
+        wordEl.classList.remove('shake'); void wordEl.offsetWidth; wordEl.classList.add('shake');
+        vibrate(30);
+        setTimeout(function(){ var s = choices[rand()]; wordEl.textContent = s; wordEl.setAttribute('aria-label', s); history.unshift(s); renderHistory(); }, 300);
+      }
+      function reset(){ history=[]; renderHistory(); wordEl.textContent='—'; }
+
+      pickBtn.addEventListener('click', pick);
+      // iOS local file quirk: ensure touchstart also triggers
+      pickBtn.addEventListener('touchstart', function(e){ e.preventDefault(); pick(); }, {passive:false});
+      resetBtn.addEventListener('click', reset);
+      document.addEventListener('keydown', function(e){ if(e.code==='Space'||e.code==='Enter'){ e.preventDefault(); pick(); }});
+
+      renderHistory();
+    })();
+  </script>
+</body>
+</html>
