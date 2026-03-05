@@ -1,0 +1,1111 @@
+<!--
+Updated app that supports SCENARIO and TF as first-class types (with labels), while keeping everything else the same (CSV import/export, Mark & Next, modal quiz, persistent resume).
+
+What’s new
+	Enabled Previous and Next Buttons
+	Changed the color of Reveal Answer Button
+	Add a Previous button in the modal next to Next
+	Implement prevQuestion() that decrements idx (without losing saved state)
+	Enable/disable it depending on where you are (e.g., disable at idx=0, or wrap around)
+
+	type now supports: MCQ, MSQ, SCENARIO, TF
+	SCENARIO behaves like MCQ (single-choice) in the UI.
+	TF behaves like MCQ, and the app will force options to True|False (even if missing in CSV).
+	Type filter dropdown now includes SCENARIO and TF.
+	CSV import accepts these types; CSV export preserves them.
+	
+_________________________________________________________________________________
+
+Prompt 1:
+
+Create a Question Bank CSV for: [TOPIC NAME].
+
+Audience: [beginner / intermediate / advanced]
+Purpose: Help me study for [exam/interview/certification] on this topic.
+
+Output requirements (STRICT):
+- Output ONLY CSV content (no explanation outside CSV).
+- Use this exact header row:
+type,question,options,answer,difficulty,tags,source,explanation,id
+- Allowed types: MCQ, MSQ, SCENARIO, TF
+  - SCENARIO behaves like MCQ unless clearly MSQ
+  - TF must have options exactly: True|False and answer must be 1 or 2
+- options must be pipe-separated, e.g.:
+  Option A|Option B|Option C|Option D
+- answer format:
+  - MCQ/SCENARIO/TF: single 1-based index (e.g., 2)
+  - MSQ: comma-separated 1-based indices (e.g., 1,3,4) include in double Quotes since multiple answers are possible
+- difficulty must be one of: Easy, Medium, Hard
+- tags: 2–4 comma-separated tags (no pipes)
+- source: include the subtopic/section label (e.g., “Section 2.1”, “Ch3 - Roles”)
+- explanation: 1–2 short lines max
+- id: unique ids like [TOPICCODE]-001, [TOPICCODE]-002, ...
+
+Question mix:
+- Total questions: [N]
+- MCQ: [#]
+- MSQ: [#]
+- SCENARIO: [#]
+- TF: [#]
+
+Coverage constraints:
+- Cover ALL of these subtopics (balance them): [PASTE OUTLINE / SUBTOPICS HERE]
+- Include a mix of definition, concept, application, and “best next step” questions.
+- Avoid ambiguous wording; for MCQ/SCENARIO there must be exactly one best answer.
+- Don’t repeat the same correct option position too often; distribute answers across 1–4.
+- Keep options plausible and similar in length; avoid giveaway wording.
+
+Formatting constraints:
+- Use exactly 4 options for MCQ/SCENARIO (unless TF which is always True|False).
+- No blank fields; if source is unknown, use the closest subtopic label.
+- Ensure every row is valid CSV (quote fields if needed).
+
+_________________________________________________________________________________
+
+Prompt 2:
+Using ONLY the notes below as the source of truth, generate a Question Bank CSV that follows the exact same rules and header:
+
+type,question,options,answer,difficulty,tags,source,explanation,id
+
+Notes:
+[PASTE YOUR NOTES HERE]
+	
+	
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Question Bank Quiz — CSV + Mark&Next + Modal + Persistent (SCENARIO/TF)</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .choice { cursor: pointer; }
+    .choice:hover { background: #f8f9fa; }
+    .pill { border: 1px solid rgba(0,0,0,.12); border-radius: 999px; padding: .15rem .6rem; font-size: .85rem; }
+    .muted { color: #6c757d; }
+    .mark-dot {
+      display: inline-block; width: 10px; height: 10px; border-radius: 999px;
+      background: #ffc107; margin-right: .35rem; vertical-align: middle;
+      border: 1px solid rgba(0,0,0,.2);
+    }
+    .modal-backdrop.show { opacity: .75; }
+  </style>
+</head>
+
+<body class="bg-light">
+  <nav class="navbar navbar-dark bg-dark">
+    <div class="container-fluid">
+      <span class="navbar-brand">Quiz — CSV + Mark&Next + Modal + Persistent (SCENARIO/TF)</span>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-light btn-sm" id="btnLoadStorage">Load from Storage</button>
+        <label class="btn btn-outline-light btn-sm mb-0">
+          Import CSV <input type="file" id="fileImportCSV" accept=".csv,text/csv" hidden>
+        </label>
+        <button class="btn btn-outline-light btn-sm" id="btnExportCSV" disabled>Export CSV</button>
+        <button class="btn btn-warning btn-sm" id="btnClearBank">Clear Bank</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4">
+    <div class="row g-3">
+      <!-- Setup -->
+      <div class="col-lg-4">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Setup</h5>
+
+            <div class="mb-2 small muted">
+              Bank size: <span class="mono" id="bankCount">0</span> question(s)
+            </div>
+
+            <div id="resumeBanner" class="alert alert-warning d-none">
+              <div class="d-flex justify-content-between align-items-center gap-2">
+                <div>
+                  Saved progress found.
+                  <div class="small muted">Last saved: <span class="mono" id="lastSavedLabel"></span></div>
+                </div>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-sm btn-primary" id="btnResume">Resume</button>
+                  <button class="btn btn-sm btn-outline-danger" id="btnDiscardProgress">Discard</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label">Type</label>
+                <select id="filterType" class="form-select">
+                  <option value="">All</option>
+                  <option value="MCQ">MCQ</option>
+                  <option value="MSQ">MSQ</option>
+                  <option value="SCENARIO">SCENARIO</option>
+                  <option value="TF">TF</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Difficulty</label>
+                <select id="filterDifficulty" class="form-select">
+                  <option value="">All</option>
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Tag (optional)</label>
+                <input id="filterTag" class="form-control" placeholder="e.g., governance" />
+                <div class="form-text">Matches any tag containing this text.</div>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Order</label>
+                <select id="orderMode" class="form-select">
+                  <option value="random" selected>Random</option>
+                  <option value="sequential">Sequential</option>
+                </select>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Number of questions</label>
+                <input id="quizSize" type="number" class="form-control" min="1" value="10" />
+              </div>
+            </div>
+
+            <hr class="my-3"/>
+
+            <div class="d-grid gap-2">
+              <button class="btn btn-primary" id="btnStart" disabled>Start Quiz (Popup)</button>
+              <button class="btn btn-outline-secondary" id="btnResetQuiz" disabled>Reset Quiz</button>
+            </div>
+
+            <div class="alert alert-info mt-3 mb-0 small">
+              CSV columns (recommended):<br/>
+              <span class="mono">type,question,options,answer,difficulty,tags,source,explanation,id</span><br/>
+              Options use pipe: <span class="mono">A|B|C</span><br/>
+              TF should use: <span class="mono">True|False</span> and answer <span class="mono">1</span> or <span class="mono">2</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm mt-3">
+          <div class="card-body">
+            <h6 class="mb-2">Quiz Stats</h6>
+            <div class="d-flex flex-wrap gap-2">
+              <span class="pill">Score: <span class="mono" id="scoreLabel">0</span></span>
+              <span class="pill">Progress: <span class="mono" id="progressLabel">0/0</span></span>
+              <span class="pill">Correct: <span class="mono" id="correctLabel">0</span></span>
+              <span class="pill">Wrong: <span class="mono" id="wrongLabel">0</span></span>
+              <span class="pill">Marked: <span class="mono" id="markedLabel">0</span></span>
+            </div>
+            <div class="small muted mt-2">
+              SCENARIO acts like MCQ. TF auto-forces True/False options.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="col-lg-8">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h6 class="mb-2">Loaded Bank Preview</h6>
+            <div class="small text-muted" id="bankPreview">No questions loaded.</div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm mt-3">
+          <div class="card-body">
+            <h6 class="mb-2">About Progress</h6>
+            <div class="small text-muted">
+              Progress: <span class="mono">quiz_progress_v1</span> (localStorage). Bank: <span class="mono">question_bank_v1</span>.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- QUIZ MODAL -->
+  <div class="modal fade" id="quizModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title mb-0">Quiz</h5>
+            <div class="small muted">Auto-saved. Close and resume anytime.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <div id="emptyState" class="text-muted">
+            Load a question bank, then start the quiz (or resume saved progress).
+          </div>
+
+          <div id="quizUI" class="d-none">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div>
+                <span class="badge bg-primary" id="badgeType">MCQ</span>
+                <span class="badge bg-secondary" id="badgeDifficulty">Medium</span>
+                <span class="badge bg-light text-dark border d-none" id="badgeSource"></span>
+                <span class="badge bg-warning text-dark d-none" id="badgeMarked"><span class="mark-dot"></span>Marked</span>
+              </div>
+              <div class="small muted mono" id="qidLabel"></div>
+            </div>
+
+            <h5 class="mt-3" id="questionText"></h5>
+            <div class="mt-3" id="choices"></div>
+
+            <div class="mt-3 d-flex flex-wrap gap-2">
+				<button class="btn btn-outline-primary" id="btnPrev" disabled>Previous</button>
+				<button class="btn btn-success" id="btnSubmit" disabled>Submit</button>
+				<button class="btn btn-outline-primary" id="btnNext" disabled>Next</button>
+				<button class="btn btn-info" id="btnReveal" disabled>Reveal Answer</button>
+
+              <div class="ms-auto d-flex gap-2">
+                <button class="btn btn-warning" id="btnToggleMark" disabled>Mark & Next</button>
+                <button class="btn btn-outline-warning" id="btnNextMarked" disabled>Next Marked</button>
+              </div>
+            </div>
+
+            <div class="mt-3 d-none" id="feedbackBox"></div>
+
+            <div class="mt-3 d-none" id="explainBox">
+              <h6>Explanation</h6>
+              <div class="text-muted" id="explainText"></div>
+            </div>
+          </div>
+
+          <div id="doneUI" class="d-none">
+            <h4>Quiz Complete</h4>
+            <p class="text-muted mb-2">
+              Final Score: <span class="mono" id="finalScore">0</span>
+              &nbsp;|&nbsp; Correct: <span class="mono" id="finalCorrect">0</span>
+              &nbsp;|&nbsp; Wrong: <span class="mono" id="finalWrong">0</span>
+              &nbsp;|&nbsp; Marked: <span class="mono" id="finalMarked">0</span>
+            </p>
+            <div class="d-flex flex-wrap gap-2">
+              <button class="btn btn-primary" id="btnRestart">Restart</button>
+              <button class="btn btn-outline-danger" id="btnClearProgressDone">Clear Saved Progress</button>
+              <button class="btn btn-outline-warning" id="btnJumpFirstMarkedDone">Jump to First Marked</button>
+            </div>
+
+            <div class="mt-3">
+              <h6 class="mb-2">Marked Questions (quick list)</h6>
+              <div id="markedListDone" class="small text-muted">None.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer d-flex justify-content-between">
+          <div class="small muted">
+            <span class="pill">Score: <span class="mono" id="scoreLabel2">0</span></span>
+            <span class="pill ms-2">Progress: <span class="mono" id="progressLabel2">0/0</span></span>
+            <span class="pill ms-2">Marked: <span class="mono" id="markedLabel2">0</span></span>
+          </div>
+          <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Close (Progress Saved)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const STORAGE_KEY_BANK = "question_bank_v1";
+    const STORAGE_KEY_PROGRESS = "quiz_progress_v1";
+
+    const el = (id) => document.getElementById(id);
+
+    const bankCount = el("bankCount");
+    const bankPreview = el("bankPreview");
+    const btnLoadStorage = el("btnLoadStorage");
+    const fileImportCSV = el("fileImportCSV");
+    const btnExportCSV = el("btnExportCSV");
+    const btnClearBank = el("btnClearBank");
+
+    const filterType = el("filterType");
+    const filterDifficulty = el("filterDifficulty");
+    const filterTag = el("filterTag");
+    const orderMode = el("orderMode");
+    const quizSize = el("quizSize");
+
+    const btnStart = el("btnStart");
+    const btnResetQuiz = el("btnResetQuiz");
+
+    const resumeBanner = el("resumeBanner");
+    const lastSavedLabel = el("lastSavedLabel");
+    const btnResume = el("btnResume");
+    const btnDiscardProgress = el("btnDiscardProgress");
+
+    const quizModalEl = el("quizModal");
+    const quizModal = new bootstrap.Modal(quizModalEl, { backdrop: "static", keyboard: true });
+
+    const emptyState = el("emptyState");
+    const quizUI = el("quizUI");
+    const doneUI = el("doneUI");
+
+    const badgeType = el("badgeType");
+    const badgeDifficulty = el("badgeDifficulty");
+    const badgeSource = el("badgeSource");
+    const badgeMarked = el("badgeMarked");
+    const qidLabel = el("qidLabel");
+    const questionText = el("questionText");
+    const choices = el("choices");
+
+    const btnSubmit = el("btnSubmit");
+	const btnPrev = el("btnPrev");
+    const btnNext = el("btnNext");
+    const btnReveal = el("btnReveal");
+    const btnToggleMark = el("btnToggleMark");
+    const btnNextMarked = el("btnNextMarked");
+
+    const feedbackBox = el("feedbackBox");
+    const explainBox = el("explainBox");
+    const explainText = el("explainText");
+
+    const scoreLabel = el("scoreLabel");
+    const progressLabel = el("progressLabel");
+    const correctLabel = el("correctLabel");
+    const wrongLabel = el("wrongLabel");
+    const markedLabel = el("markedLabel");
+
+    const scoreLabel2 = el("scoreLabel2");
+    const progressLabel2 = el("progressLabel2");
+    const markedLabel2 = el("markedLabel2");
+
+    const finalScore = el("finalScore");
+    const finalCorrect = el("finalCorrect");
+    const finalWrong = el("finalWrong");
+    const finalMarked = el("finalMarked");
+    const btnRestart = el("btnRestart");
+    const btnClearProgressDone = el("btnClearProgressDone");
+    const btnJumpFirstMarkedDone = el("btnJumpFirstMarkedDone");
+    const markedListDone = el("markedListDone");
+
+    // State
+    let bank = [];
+    let quiz = [];
+    let idx = 0;
+    let score = 0;
+    let correct = 0;
+    let wrong = 0;
+    let submitted = false;
+    let progressById = {}; // { selected, submitted, isCorrect, revealed, marked }
+
+    function escapeHtml(str) {
+      return (str ?? "").toString().replace(/[&<>"']/g, (m) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+      }[m]));
+    }
+
+    function loadBankFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_BANK);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch { return []; }
+    }
+    function saveBankToStorage(items) {
+      localStorage.setItem(STORAGE_KEY_BANK, JSON.stringify(items, null, 2));
+    }
+
+    function normalizeType(t) {
+      const type = (t || "MCQ").toString().trim().toUpperCase();
+      const allowed = new Set(["MCQ","MSQ","SCENARIO","TF"]);
+      return allowed.has(type) ? type : "MCQ";
+    }
+
+    function normalizeQuestion(q) {
+      const type = normalizeType(q.type);
+      let options = Array.isArray(q.options) ? q.options : [];
+      // TF: always enforce True/False (even if CSV provides something else)
+      if (type === "TF") options = ["True", "False"];
+
+      const tags = Array.isArray(q.tags)
+        ? q.tags
+        : (typeof q.tags === "string" ? q.tags.split(",").map(x => x.trim()).filter(Boolean) : []);
+
+      return {
+        id: q.id || ("q_" + Math.random().toString(16).slice(2)),
+        type,
+        text: q.text || q.question || "",
+        options,
+        answer: (q.answer ?? "").toString(),
+        difficulty: ["Easy","Medium","Hard"].includes(q.difficulty) ? q.difficulty : "Medium",
+        tags,
+        source: q.source || "",
+        explanation: q.explanation || ""
+      };
+    }
+
+    function setBank(newBank) {
+      // For TF, options are auto-injected during normalization, so allow TF rows even if options were blank in the source
+      bank = (newBank || []).map(normalizeQuestion).filter(q => q.text && (q.options?.length || 0) > 0);
+      bankCount.textContent = bank.length.toString();
+      btnStart.disabled = bank.length === 0;
+      btnExportCSV.disabled = bank.length === 0;
+
+      if (bank.length === 0) {
+        bankPreview.textContent = "No questions loaded (or questions missing options).";
+      } else {
+        const top = bank.slice(0, 12).map((q, i) =>
+          `<div class="mb-1"><span class="mono">${i+1}.</span> <b>${escapeHtml(q.type)}</b> — ${escapeHtml(q.text)}</div>`
+        ).join("");
+        bankPreview.innerHTML = top + (bank.length > 12 ? `<div class="text-muted mt-1">…and ${bank.length - 12} more</div>` : "");
+      }
+
+      showResumeIfAny();
+    }
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function toIndexSetFromAnswer(question) {
+      const ans = (question.answer || "").trim();
+      const opts = question.options || [];
+      const s = new Set();
+      if (!ans) return s;
+
+      const parts = ans.split(",").map(x => x.trim()).filter(Boolean);
+      const allNumeric = parts.length > 0 && parts.every(x => /^\d+$/.test(x));
+      if (allNumeric) {
+        parts.forEach(n => {
+          const idx1 = parseInt(n, 10) - 1;
+          if (idx1 >= 0 && idx1 < opts.length) s.add(idx1);
+        });
+        return s;
+      }
+
+      parts.forEach(p => {
+        const i = opts.findIndex(o => (o ?? "").toString().trim().toLowerCase() === p.toLowerCase());
+        if (i >= 0) s.add(i);
+      });
+      return s;
+    }
+
+    function getSelectedIndexSetFromUI() {
+      const inputs = choices.querySelectorAll("input[name='choice']");
+      const selected = new Set();
+      inputs.forEach((inp, i) => { if (inp.checked) selected.add(i); });
+      return selected;
+    }
+
+    function setsEqual(a, b) {
+      if (a.size !== b.size) return false;
+      for (const x of a) if (!b.has(x)) return false;
+      return true;
+    }
+
+    function countMarked() {
+      return Object.values(progressById).filter(s => s && s.marked === true).length;
+    }
+
+    // CSV helpers
+    function parseCSV(text) {
+      const rows = [];
+      let cur = "", inQuotes = false;
+      const line = [];
+      function pushCell() { line.push(cur); cur = ""; }
+      function pushRow() { rows.push([...line]); line.length = 0; }
+
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i+1];
+        if (ch === '"') {
+          if (inQuotes && next === '"') { cur += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if (ch === "," && !inQuotes) {
+          pushCell();
+        } else if ((ch === "\n" || ch === "\r") && !inQuotes) {
+          if (ch === "\r" && next === "\n") i++;
+          pushCell();
+          pushRow();
+        } else {
+          cur += ch;
+        }
+      }
+      pushCell();
+      if (line.some(x => x !== "")) pushRow();
+
+      if (rows.length === 0) return [];
+      const headers = rows[0].map(h => (h || "").trim());
+      return rows.slice(1).map(r => {
+        const obj = {};
+        headers.forEach((h, idx) => obj[h || ("col" + (idx+1))] = (r[idx] ?? "").toString());
+        return obj;
+      });
+    }
+
+    function csvEscapeCell(value) {
+      const s = (value ?? "").toString();
+      const escaped = s.replace(/"/g, '""');
+      if (/[",\r\n]/.test(escaped)) return `"${escaped}"`;
+      return escaped;
+    }
+
+    function bankToCSV(bankItems) {
+      const headers = ["type","question","options","answer","difficulty","tags","source","explanation","id"];
+      const lines = [];
+      lines.push(headers.join(","));
+
+      for (const q of bankItems) {
+        const row = {
+          type: q.type || "MCQ",
+          question: q.text || "",
+          // TF always exports as True|False
+          options: (q.type === "TF") ? "True|False" : (Array.isArray(q.options) ? q.options.join("|") : ""),
+          answer: q.answer || "",
+          difficulty: q.difficulty || "Medium",
+          tags: Array.isArray(q.tags) ? q.tags.join(",") : (q.tags || ""),
+          source: q.source || "",
+          explanation: q.explanation || "",
+          id: q.id || ""
+        };
+        lines.push(headers.map(h => csvEscapeCell(row[h])).join(","));
+      }
+      return lines.join("\n");
+    }
+
+    function csvRowsToBank(csvRows) {
+      const normKey = (k) => (k || "").trim().toLowerCase();
+      function get(row, ...keys) {
+        const map = new Map(Object.keys(row).map(k => [normKey(k), k]));
+        for (const key of keys) {
+          const orig = map.get(normKey(key));
+          if (orig !== undefined) return row[orig];
+        }
+        return "";
+      }
+      function parseOptionsField(val) {
+        const s = (val ?? "").toString().trim();
+        if (!s) return [];
+        if (s.includes("|")) return s.split("|").map(x => x.trim()).filter(Boolean);
+        return s.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+      }
+      function parseTagsField(val) {
+        return (val ?? "").toString().split(",").map(x => x.trim()).filter(Boolean);
+      }
+
+      const out = [];
+      for (const row of csvRows) {
+        const text = get(row, "question", "text", "q", "prompt", "stem").toString().trim();
+        if (!text) continue;
+
+        const type = normalizeType(get(row, "type", "qtype", "questiontype"));
+        const rawOptions = parseOptionsField(get(row, "options", "choices", "choice"));
+
+        const options = (type === "TF") ? ["True", "False"] : rawOptions;
+        if (options.length === 0) continue;
+
+        const answer = get(row, "answer", "correct", "key").toString().trim();
+        const difficultyRaw = get(row, "difficulty", "level").toString().trim();
+        const difficulty = ["Easy","Medium","Hard"].includes(difficultyRaw) ? difficultyRaw : "Medium";
+
+        const tags = parseTagsField(get(row, "tags", "tag", "topic", "topics"));
+        const source = get(row, "source", "chapter", "section", "ref", "reference").toString().trim();
+        const explanation = get(row, "explanation", "notes", "rationale", "reason").toString().trim();
+        const id = get(row, "id").toString().trim();
+
+        out.push({
+          id: id || ("q_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16)),
+          type,
+          text,
+          options,
+          answer,
+          difficulty,
+          tags,
+          source,
+          explanation
+        });
+      }
+      return out;
+    }
+
+    // Progress persistence
+    function saveProgress(reason = "") {
+      if (!quiz || quiz.length === 0) return;
+      const payload = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        reason,
+        quizQuestionIds: quiz.map(q => q.id),
+        idx, score, correct, wrong,
+        progressById,
+        setup: {
+          filterType: filterType.value,
+          filterDifficulty: filterDifficulty.value,
+          filterTag: filterTag.value,
+          orderMode: orderMode.value,
+          quizSize: quizSize.value
+        }
+      };
+      localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(payload));
+      showResumeIfAny();
+    }
+
+    function loadProgress() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_PROGRESS);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.version !== 1) return null;
+        return parsed;
+      } catch { return null; }
+    }
+
+    function clearProgress() {
+      localStorage.removeItem(STORAGE_KEY_PROGRESS);
+      resumeBanner.classList.add("d-none");
+    }
+
+    function showResumeIfAny() {
+      const p = loadProgress();
+      if (!p) { resumeBanner.classList.add("d-none"); return; }
+      if (!bank || bank.length === 0) { resumeBanner.classList.add("d-none"); return; }
+      lastSavedLabel.textContent = p.savedAt ? new Date(p.savedAt).toLocaleString() : "";
+      resumeBanner.classList.remove("d-none");
+    }
+
+    // Quiz build + resume
+    function applyFiltersAndBuildQuiz() {
+      const ft = filterType.value;
+      const fd = filterDifficulty.value;
+      const tag = (filterTag.value || "").trim().toLowerCase();
+
+      let pool = bank.slice();
+      if (ft) pool = pool.filter(q => q.type === ft);
+      if (fd) pool = pool.filter(q => q.difficulty === fd);
+      if (tag) pool = pool.filter(q => (q.tags || []).some(t => (t || "").toLowerCase().includes(tag)));
+
+      // include all supported types with options
+      pool = pool.filter(q => ["MCQ","MSQ","SCENARIO","TF"].includes(q.type) && (q.options?.length || 0) > 0);
+
+      const n = Math.max(1, parseInt(quizSize.value || "10", 10));
+      if (pool.length === 0) return [];
+
+      if (orderMode.value === "random") shuffle(pool);
+      return pool.slice(0, Math.min(n, pool.length));
+    }
+
+    function resetStats() {
+      idx = 0; score = 0; correct = 0; wrong = 0;
+      submitted = false;
+      progressById = {};
+      updateStats();
+    }
+
+    function updateStats() {
+      scoreLabel.textContent = score.toString();
+      progressLabel.textContent = `${quiz.length ? (idx + 1) : 0}/${quiz.length}`;
+      correctLabel.textContent = correct.toString();
+      wrongLabel.textContent = wrong.toString();
+      markedLabel.textContent = countMarked().toString();
+
+      scoreLabel2.textContent = score.toString();
+      progressLabel2.textContent = `${quiz.length ? (idx + 1) : 0}/${quiz.length}`;
+      markedLabel2.textContent = countMarked().toString();
+    }
+
+    function openQuizModal() {
+      emptyState.classList.toggle("d-none", quiz.length > 0);
+      quizUI.classList.toggle("d-none", quiz.length === 0);
+      doneUI.classList.add("d-none");
+      quizModal.show();
+    }
+
+    function startQuizFresh() {
+      quiz = applyFiltersAndBuildQuiz();
+      if (quiz.length === 0) { alert("No questions match your filters (or bank is empty)."); return; }
+      resetStats();
+      btnResetQuiz.disabled = false;
+      openQuizModal();
+      renderQuestion();
+      saveProgress("start");
+    }
+
+    function resumeQuiz() {
+      const p = loadProgress();
+      if (!p) { alert("No saved progress found."); return; }
+
+      if (p.setup) {
+        filterType.value = p.setup.filterType ?? "";
+        filterDifficulty.value = p.setup.filterDifficulty ?? "";
+        filterTag.value = p.setup.filterTag ?? "";
+        orderMode.value = p.setup.orderMode ?? "random";
+        quizSize.value = p.setup.quizSize ?? "10";
+      }
+
+      const idToQuestion = new Map(bank.map(q => [q.id, q]));
+      const rebuilt = (p.quizQuestionIds || []).map(id => idToQuestion.get(id)).filter(Boolean);
+
+      if (rebuilt.length === 0) {
+        alert("Saved progress doesn't match the current bank (questions missing). Discarding progress.");
+        clearProgress();
+        return;
+      }
+
+      quiz = rebuilt;
+      idx = Math.min(Math.max(0, parseInt(p.idx || 0, 10)), quiz.length - 1);
+      score = parseInt(p.score || 0, 10);
+      correct = parseInt(p.correct || 0, 10);
+      wrong = parseInt(p.wrong || 0, 10);
+      progressById = p.progressById || {};
+      submitted = false;
+
+      btnResetQuiz.disabled = false;
+      openQuizModal();
+      renderQuestion();
+      saveProgress("resume");
+    }
+
+    // Rendering
+    function renderQuestion() {
+      btnSubmit.disabled = true;
+	  btnPrev.disabled = false;     // or false if you want wrap-around
+      btnNext.disabled = false;
+      btnReveal.disabled = false;
+      btnToggleMark.disabled = false;
+      btnNextMarked.disabled = false;
+
+      feedbackBox.classList.add("d-none");
+      feedbackBox.innerHTML = "";
+      explainBox.classList.add("d-none");
+      explainText.textContent = "";
+
+      const q = quiz[idx];
+      const qState = progressById[q.id] || { selected: [], submitted: false, isCorrect: null, revealed: false, marked: false };
+
+      badgeType.textContent = q.type;
+      badgeDifficulty.textContent = q.difficulty;
+
+      if (q.source) {
+        badgeSource.textContent = q.source;
+        badgeSource.classList.remove("d-none");
+      } else {
+        badgeSource.classList.add("d-none");
+      }
+
+      const isMarked = !!qState.marked;
+      badgeMarked.classList.toggle("d-none", !isMarked);
+      btnToggleMark.textContent = isMarked ? "Unmark" : "Mark & Next";
+
+      qidLabel.textContent = q.id ? `ID: ${q.id}` : "";
+      questionText.textContent = q.text;
+
+      // Input behavior:
+      // - MSQ => checkbox
+      // - everything else (MCQ/SCENARIO/TF) => radio
+      const isCheckbox = (q.type === "MSQ");
+      choices.innerHTML = q.options.map((opt, i) => {
+        const inputType = isCheckbox ? "checkbox" : "radio";
+        return `
+          <label class="list-group-item choice d-flex gap-2 align-items-start">
+            <input class="form-check-input mt-1" type="${inputType}" name="choice" value="${i}">
+            <div><div><span class="mono">${i+1}.</span> ${escapeHtml(opt)}</div></div>
+          </label>
+        `;
+      }).join("");
+      choices.className = "list-group";
+
+      const inputs = choices.querySelectorAll("input[name='choice']");
+      inputs.forEach((inp, i) => {
+        inp.checked = (qState.selected || []).includes(i);
+        inp.addEventListener("change", () => {
+          const sel = Array.from(getSelectedIndexSetFromUI());
+          progressById[q.id] = { ...qState, selected: sel, submitted: false, isCorrect: null };
+          btnSubmit.disabled = sel.length === 0;
+          saveProgress("select");
+          updateStats();
+        });
+      });
+
+      submitted = !!qState.submitted;
+      if (submitted) {
+        inputs.forEach(inp => inp.disabled = true);
+
+        const correctSet = toIndexSetFromAnswer(q);
+        const selectedSet = new Set(qState.selected || []);
+        markChoices(correctSet, selectedSet);
+        showFeedback(qState.isCorrect === true, correctSet, q);
+
+        btnNext.disabled = false;
+        btnSubmit.disabled = true;
+        //btnReveal.disabled = true;
+      } else {
+        btnSubmit.disabled = (qState.selected || []).length === 0;
+        btnReveal.disabled = false;
+      }
+
+      emptyState.classList.add("d-none");
+      quizUI.classList.remove("d-none");
+      doneUI.classList.add("d-none");
+
+      updateStats();
+      saveProgress("render");
+    }
+
+    function showFeedback(isCorrect, correctSet, q) {
+      feedbackBox.classList.remove("d-none");
+      feedbackBox.className = "mt-3 alert " + (isCorrect ? "alert-success" : "alert-danger");
+
+      const correctTexts = Array.from(correctSet).sort((a,b)=>a-b).map(i => `${i+1}. ${q.options[i]}`);
+      feedbackBox.innerHTML = `
+        <div><b>${isCorrect ? "Correct!" : "Incorrect."}</b></div>
+        <div class="small mt-1">Correct answer(s): <span class="mono">${escapeHtml(correctTexts.join(" | "))}</span></div>
+      `;
+
+      if (q.explanation) {
+        explainBox.classList.remove("d-none");
+        explainText.textContent = q.explanation;
+      }
+    }
+
+    function markChoices(correctSet, selectedSet) {
+      const items = choices.querySelectorAll(".list-group-item");
+      items.forEach((item, i) => {
+        item.classList.remove("list-group-item-success", "list-group-item-danger");
+        const isCorrect = correctSet.has(i);
+        const isSelected = selectedSet.has(i);
+        if (isCorrect) item.classList.add("list-group-item-success");
+        if (isSelected && !isCorrect) item.classList.add("list-group-item-danger");
+      });
+    }
+
+    // Actions
+    function submitAnswer() {
+      if (submitted) return;
+      const q = quiz[idx];
+
+      const selectedSet = getSelectedIndexSetFromUI();
+      if (selectedSet.size === 0) return;
+
+      const correctSet = toIndexSetFromAnswer(q);
+      if (correctSet.size === 0) {
+        alert("This question has no valid answer key. Fix the 'answer' field in your bank.");
+        return;
+      }
+
+      submitted = true;
+      choices.querySelectorAll("input[name='choice']").forEach(inp => inp.disabled = true);
+
+      const isCorrect = setsEqual(selectedSet, correctSet);
+      if (isCorrect) { score += 1; correct += 1; } else { wrong += 1; }
+
+      const prior = progressById[q.id] || { selected: [], submitted: false, isCorrect: null, revealed: false, marked: false };
+      progressById[q.id] = { ...prior, selected: Array.from(selectedSet), submitted: true, isCorrect, revealed: false };
+
+      markChoices(correctSet, selectedSet);
+      showFeedback(isCorrect, correctSet, q);
+
+      btnSubmit.disabled = true;
+      btnNext.disabled = false;
+      btnReveal.disabled = true;
+
+      updateStats();
+      saveProgress("submit");
+    }
+
+    function revealAnswer() {
+      const q = quiz[idx];
+      const correctSet = toIndexSetFromAnswer(q);
+      if (correctSet.size === 0) { alert("This question has no valid answer key."); return; }
+      const selectedSet = getSelectedIndexSetFromUI();
+
+      markChoices(correctSet, selectedSet);
+      showFeedback(false, correctSet, q);
+
+      const prior = progressById[q.id] || { selected: Array.from(selectedSet), submitted: false, isCorrect: null, revealed: false, marked: false };
+      progressById[q.id] = { ...prior, selected: Array.from(selectedSet), revealed: true };
+
+      updateStats();
+      saveProgress("reveal");
+    }
+	
+	function prevQuestion() {
+	  if (!quiz || quiz.length === 0) return;
+	  idx = (idx - 1 + quiz.length) % quiz.length;
+	  renderQuestion();
+	  saveProgress("prev_wrap");
+	}
+
+    function nextQuestion() {
+      if (idx + 1 >= quiz.length) { finishQuiz(); return; }
+      idx += 1;
+      renderQuestion();
+      saveProgress("next");
+    }
+
+    function finishQuiz() {
+      quizUI.classList.add("d-none");
+      doneUI.classList.remove("d-none");
+
+      finalScore.textContent = score.toString();
+      finalCorrect.textContent = correct.toString();
+      finalWrong.textContent = wrong.toString();
+      finalMarked.textContent = countMarked().toString();
+
+      renderMarkedDoneList();
+      updateStats();
+      saveProgress("done");
+    }
+
+    // Marking
+    function toggleMarkAndMaybeNext() {
+      if (!quiz || quiz.length === 0) return;
+      const q = quiz[idx];
+      const prior = progressById[q.id] || { selected: [], submitted: false, isCorrect: null, revealed: false, marked: false };
+
+      if (!prior.marked) {
+        progressById[q.id] = { ...prior, marked: true };
+        updateStats();
+        saveProgress("mark_and_next");
+        nextQuestion();
+      } else {
+        progressById[q.id] = { ...prior, marked: false };
+        updateStats();
+        saveProgress("unmark");
+        renderQuestion();
+      }
+    }
+
+    function findNextMarkedIndex(fromIndex) {
+      for (let i = fromIndex + 1; i < quiz.length; i++) if (progressById[quiz[i].id]?.marked) return i;
+      for (let i = 0; i <= fromIndex; i++) if (progressById[quiz[i].id]?.marked) return i;
+      return -1;
+    }
+
+    function gotoNextMarked() {
+      const nextIdx = findNextMarkedIndex(idx);
+      if (nextIdx === -1) { alert("No marked questions in this quiz."); return; }
+      idx = nextIdx;
+      renderQuestion();
+      saveProgress("goto_marked");
+    }
+
+    function gotoFirstMarked() {
+      const nextIdx = findNextMarkedIndex(-1);
+      if (nextIdx === -1) { alert("No marked questions."); return; }
+      idx = nextIdx;
+      doneUI.classList.add("d-none");
+      quizUI.classList.remove("d-none");
+      renderQuestion();
+      saveProgress("goto_first_marked");
+    }
+
+    function renderMarkedDoneList() {
+      const markedIds = Object.keys(progressById).filter(id => progressById[id]?.marked);
+      if (markedIds.length === 0) { markedListDone.textContent = "None."; return; }
+      const idToQ = new Map(quiz.map(q => [q.id, q]));
+      const items = markedIds.map(id => idToQ.get(id)).filter(Boolean);
+
+      markedListDone.innerHTML =
+        items.slice(0, 25).map(q => {
+          const indexInQuiz = quiz.findIndex(x => x.id === q.id);
+          const st = progressById[q.id] || {};
+          const status = st.submitted ? (st.isCorrect ? "✅" : "❌") : "⏳";
+          return `<div class="mb-1"><span class="mono">${status} #${indexInQuiz + 1}</span> — ${escapeHtml(q.text)}</div>`;
+        }).join("") + (items.length > 25 ? `<div class="text-muted">…and ${items.length - 25} more</div>` : "");
+    }
+
+    // Export/Import CSV
+    function exportCSV() {
+      const csv = bankToCSV(bank);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "question_bank.csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    async function importCSV(file) {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      if (!Array.isArray(rows) || rows.length === 0) throw new Error("CSV appears empty or invalid.");
+      const imported = csvRowsToBank(rows);
+      if (imported.length === 0) throw new Error("No valid questions found. Ensure columns like question/options exist.");
+      saveBankToStorage(imported);
+      setBank(imported);
+    }
+
+    // Wiring
+    btnLoadStorage.addEventListener("click", () => setBank(loadBankFromStorage()));
+
+    fileImportCSV.addEventListener("change", async (e) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      try { await importCSV(f); alert("Imported CSV and loaded bank."); }
+      catch (err) { alert("CSV Import failed: " + err.message); }
+      finally { e.target.value = ""; }
+    });
+
+    btnExportCSV.addEventListener("click", exportCSV);
+
+    btnClearBank.addEventListener("click", () => {
+      if (!confirm("Clear the saved question bank from this browser (localStorage)?")) return;
+      localStorage.removeItem(STORAGE_KEY_BANK);
+      setBank([]);
+      clearProgress();
+      quiz = []; idx = 0; score = 0; correct = 0; wrong = 0; progressById = {};
+      updateStats();
+      alert("Bank cleared.");
+    });
+
+    btnStart.addEventListener("click", () => {
+      const p = loadProgress();
+      if (p && confirm("Saved progress exists. Start a NEW quiz and overwrite it?") === false) return;
+      clearProgress();
+      startQuizFresh();
+    });
+
+    btnResetQuiz.addEventListener("click", () => {
+      if (!confirm("Reset current quiz progress and start over (overwrites saved progress)?")) return;
+      clearProgress();
+      startQuizFresh();
+    });
+
+    btnResume.addEventListener("click", resumeQuiz);
+
+    btnDiscardProgress.addEventListener("click", () => {
+      if (!confirm("Discard saved progress?")) return;
+      clearProgress();
+      alert("Saved progress discarded.");
+    });
+
+    btnSubmit.addEventListener("click", submitAnswer);
+	btnPrev.addEventListener("click", prevQuestion);
+    btnNext.addEventListener("click", nextQuestion);
+    btnReveal.addEventListener("click", revealAnswer);
+    btnToggleMark.addEventListener("click", toggleMarkAndMaybeNext);
+    btnNextMarked.addEventListener("click", gotoNextMarked);
+
+    btnRestart.addEventListener("click", () => { clearProgress(); startQuizFresh(); });
+    btnClearProgressDone.addEventListener("click", () => {
+      if (!confirm("Clear saved progress?")) return;
+      clearProgress();
+      alert("Saved progress cleared.");
+      showResumeIfAny();
+    });
+    btnJumpFirstMarkedDone.addEventListener("click", gotoFirstMarked);
+
+    quizModalEl.addEventListener("hidden.bs.modal", () => {
+      saveProgress("modal_closed");
+      updateStats();
+      showResumeIfAny();
+    });
+
+    // Init
+    setBank(loadBankFromStorage());
+    btnResetQuiz.disabled = (loadProgress() == null);
+
+  </script>
+</body>
+</html>
