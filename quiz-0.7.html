@@ -1,0 +1,2342 @@
+<!--
+Smart Quiz Studio
+Responsive quiz app with Fill in the Blank, Multiple Choice, and Multiple Select. Import/export CSV, save bank and progress in localStorage, enforce learning, re-queue wrong answers, show answers in practice mode, and resume exactly where you stopped.
+
+* **developer comments throughout**
+* **scrollable feedback area** for long explanations
+* **wrapped questions in Question Overview**
+* **Practice / Exam mode toggle**
+* **Reveal Answer available only in Practice mode**
+
+##############################################
+Prompt 1:
+##############################################
+
+
+Create a quiz question bank in CSV format for the following topic:
+
+Topic: [TOPIC NAME]
+Audience: [beginner / intermediate / advanced]
+Purpose: Help me study for [exam / interview / certification / self-learning]
+
+Output requirements:
+- Output ONLY CSV content. No explanation outside CSV.
+- Use this exact header row:
+id,type,question,options,answer,explanation,difficulty,tags
+- Allowed types: FIB, MCQ, MSQ
+- For FIB:
+  - question must contain ___ for the blank
+  - options must be empty
+  - answer must be plain text
+- For MCQ:
+  - options must be pipe-separated, e.g. Option A|Option B|Option C|Option D
+  - answer must be the 1-based correct option number, e.g. 2
+- For MSQ:
+  - options must be pipe-separated
+  - answer must be comma-separated 1-based correct option numbers, e.g. 1,3
+- explanation must be concise but useful
+- difficulty must be one of: Easy, Medium, Hard
+- tags should be short comma-separated keywords
+- Make questions clear, accurate, and exam-oriented
+- Avoid duplicate questions
+- Make distractors realistic, especially for MCQ and MSQ
+
+Content requirements:
+- Create [NUMBER] questions
+- Mix question types in this ratio:
+  - FIB: [X]%
+  - MCQ: [Y]%
+  - MSQ: [Z]%
+- Focus on these subtopics:
+  1. [SUBTOPIC 1]
+  2. [SUBTOPIC 2]
+  3. [SUBTOPIC 3]
+- Make the questions challenging but fair
+- Include both conceptual and scenario-based questions where appropriate
+
+Return ONLY valid CSV.
+
+##############################################
+Prompt 2:
+
+Create a quiz question bank in CSV format for the following topic:
+
+Topic: DAMA-DMBOK2 Chapter 4 Data Architecture
+Audience: intermediate
+Purpose: Help me study for CDMP certification
+
+Output requirements:
+- Output ONLY CSV content. No explanation outside CSV.
+- Use this exact header row:
+id,type,question,options,answer,explanation,difficulty,tags
+- Allowed types: FIB, MCQ, MSQ
+- For FIB:
+  - question must contain ___ for the blank
+  - options must be empty
+  - answer must be plain text
+- For MCQ:
+  - options must be pipe-separated, e.g. Option A|Option B|Option C|Option D
+  - answer must be the 1-based correct option number, e.g. 2
+- For MSQ:
+  - options must be pipe-separated
+  - answer must be comma-separated 1-based correct option numbers, e.g. 1,3
+- explanation must be concise but useful
+- difficulty must be one of: Easy, Medium, Hard
+- tags should be short comma-separated keywords
+- Make questions clear, accurate, and exam-oriented
+- Avoid duplicate questions
+- Make distractors realistic, especially for MCQ and MSQ
+
+Content requirements:
+- Create 50 questions
+- Mix question types in this ratio:
+  - FIB: 30%
+  - MCQ: 50%
+  - MSQ: 20%
+- Focus on these subtopics:
+  1. Business Drivers
+  2. Data Architecture Outcomes and Practices
+  3. Essential Concepts
+- Make the questions challenging but fair
+- Include both conceptual and scenario-based questions where appropriate
+
+Return ONLY valid CSV.
+
+##############################################
+
+##############################################
+Prompt 3:
+
+Create a CSV question bank for [TOPIC].
+
+Output ONLY CSV with this header:
+id,type,question,options,answer,explanation,difficulty,tags
+
+Rules:
+- Types allowed: FIB, MCQ, MSQ
+- FIB: question must contain ___, options blank, answer is text
+- MCQ: options pipe-separated, answer is one 1-based index
+- MSQ: options pipe-separated, answer is comma-separated 1-based indexes
+- difficulty must be Easy, Medium, or Hard
+- explanation must be short and useful
+- tags must be comma-separated keywords
+- no duplicate questions
+- make distractors realistic
+
+Create [NUMBER] questions for [AUDIENCE] level.
+Focus on: [SUBTOPICS].
+Return ONLY valid CSV.
+
+##############################################
+
+
+
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Quiz Studio</title>
+
+  <!-- Bootstrap + Icons -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"
+    rel="stylesheet"
+  />
+
+  <style>
+    /* =========================================================
+       THEME
+       ========================================================= */
+    :root {
+      --bg1: #0f172a;
+      --bg2: #1e293b;
+      --card: rgba(255, 255, 255, 0.95);
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #6366f1;
+      --accent2: #06b6d4;
+      --accent3: #8b5cf6;
+      --success-bg: #ecfdf3;
+      --success-border: #86efac;
+      --danger-bg: #fef2f2;
+      --danger-border: #fca5a5;
+      --warning-bg: #fff7ed;
+      --warning-border: #fdba74;
+      --shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+      --soft-border: rgba(148, 163, 184, 0.18);
+      --setup-grad: linear-gradient(135deg, rgba(99,102,241,0.09), rgba(6,182,212,0.08), rgba(139,92,246,0.08));
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(99,102,241,0.25), transparent 30%),
+        radial-gradient(circle at top right, rgba(6,182,212,0.18), transparent 25%),
+        linear-gradient(135deg, var(--bg1), var(--bg2));
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .page-wrap { padding: 16px; }
+
+    /* =========================================================
+       COMMON CARDS
+       ========================================================= */
+    .hero-card,
+    .panel-card {
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.45);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero-card {
+      padding: 1.15rem;
+      margin-bottom: 1rem;
+    }
+
+    .panel-card {
+      padding: 1rem;
+      height: 100%;
+    }
+
+    .setup-panel {
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98)),
+        var(--setup-grad);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .setup-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at top right, rgba(99,102,241,0.10), transparent 28%),
+        radial-gradient(circle at bottom left, rgba(6,182,212,0.08), transparent 28%);
+      pointer-events: none;
+    }
+
+    .setup-panel > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-title {
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      font-size: clamp(1.45rem, 2vw + 1rem, 2.35rem);
+      margin-bottom: 0.3rem;
+    }
+
+    .hero-subtitle {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    .section-title {
+      font-size: 1.03rem;
+      font-weight: 800;
+      margin-bottom: 0.85rem;
+    }
+
+    .subtle-title {
+      font-size: 0.94rem;
+      font-weight: 800;
+      margin-bottom: 0.7rem;
+      color: #1e293b;
+    }
+
+    /* =========================================================
+       METRICS
+       ========================================================= */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .metric-card {
+      border-radius: 18px;
+      padding: 0.85rem;
+      background: linear-gradient(180deg, rgba(255,255,255,0.97), rgba(241,245,249,0.95));
+      border: 1px solid var(--soft-border);
+    }
+
+    .metric-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.22rem;
+      font-weight: 700;
+    }
+
+    .metric-value {
+      font-size: 1.15rem;
+      font-weight: 800;
+    }
+
+    /* =========================================================
+       BUTTONS
+       ========================================================= */
+    .btn {
+      border-radius: 13px;
+      font-weight: 700;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none;
+      box-shadow: 0 10px 24px rgba(99,102,241,0.25);
+    }
+
+    .btn-primary:hover,
+    .btn-primary:focus {
+      background: linear-gradient(135deg, #5759e7, #0891b2);
+    }
+
+    .btn-soft {
+      background: rgba(99,102,241,0.08);
+      color: #312e81;
+      border: 1px solid rgba(99,102,241,0.15);
+    }
+
+    .btn-soft:hover {
+      background: rgba(99,102,241,0.14);
+      color: #1e1b4b;
+    }
+
+    .btn-upload {
+      background: linear-gradient(135deg, #4f46e5, #06b6d4);
+      color: white;
+      border: none;
+      box-shadow: 0 10px 22px rgba(79,70,229,0.24);
+    }
+
+    .btn-upload:hover,
+    .btn-upload:focus {
+      background: linear-gradient(135deg, #4338ca, #0891b2);
+      color: white;
+    }
+
+    .btn-danger-soft {
+      background: rgba(239, 68, 68, 0.08);
+      color: #991b1b;
+      border: 1px solid rgba(239, 68, 68, 0.15);
+    }
+
+    .btn-danger-soft:hover {
+      background: rgba(239, 68, 68, 0.14);
+      color: #7f1d1d;
+    }
+
+    .small-muted {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .mono {
+      font-family: Consolas, Monaco, monospace;
+    }
+
+    .top-chip {
+      border-radius: 999px;
+      padding: 0.48rem 0.8rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      background: rgba(99,102,241,0.08);
+      color: #312e81;
+      border: 1px solid rgba(99,102,241,0.15);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    /* =========================================================
+       LEFT SIDE SECTIONS
+       ========================================================= */
+    .setup-stack {
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .setup-box {
+      border: 1px solid var(--soft-border);
+      border-radius: 18px;
+      padding: 0.95rem;
+      background: rgba(255,255,255,0.84);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.75);
+    }
+
+    .session-controls-card {
+      padding: 1.15rem;
+      min-height: 560px;
+    }
+
+    .session-controls-card .setup-box {
+      min-height: 100%;
+      padding: 1.15rem;
+    }
+
+    .upload-box {
+      border: 1px dashed rgba(99,102,241,0.35);
+      border-radius: 18px;
+      padding: 0.95rem;
+      background: linear-gradient(180deg, rgba(238,242,255,0.85), rgba(240,249,255,0.9));
+    }
+
+    .upload-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: center;
+    }
+
+    .file-chip {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      padding: 0.65rem 0.8rem;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid rgba(99,102,241,0.15);
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: #334155;
+      flex: 1 1 220px;
+    }
+
+    .toggle-card {
+      border: 1px solid var(--soft-border);
+      border-radius: 16px;
+      padding: 0.85rem;
+      background: rgba(255,255,255,0.84);
+      height: 100%;
+    }
+
+    .toggle-card .form-check-input {
+      width: 2.8rem;
+      height: 1.45rem;
+      cursor: pointer;
+    }
+
+    .toggle-card .form-check-label {
+      cursor: pointer;
+    }
+
+    .toggle-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+
+    .session-options-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+      align-items: stretch;
+    }
+
+    .type-filter-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .type-filter-card {
+      border: 1px solid var(--soft-border);
+      border-radius: 16px;
+      padding: 0.85rem;
+      background: rgba(255,255,255,0.88);
+      min-height: 100%;
+    }
+
+    .type-filter-card .form-check {
+      min-height: 100%;
+    }
+
+    .type-filter-card .form-check-label {
+      cursor: pointer;
+      display: block;
+      width: 100%;
+    }
+
+    .type-filter-card .form-check-input {
+      cursor: pointer;
+    }
+
+    .type-filter-title {
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 0.12rem;
+    }
+
+    .type-filter-help {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .actions-stack {
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .hidden-file-input {
+      display: none;
+    }
+
+    /* =========================================================
+       OVERVIEW TABLE
+       ========================================================= */
+    .table-wrap {
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid var(--soft-border);
+      background: white;
+    }
+
+    .overview-scroll {
+      max-height: 340px;
+      overflow-y: auto;
+    }
+
+    .table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: linear-gradient(180deg, #f8fafc, #eef2ff);
+      font-size: 0.83rem;
+      color: #334155;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+
+    .table td {
+      font-size: 0.9rem;
+      vertical-align: top;
+    }
+
+    .question-cell {
+      max-width: 420px;
+      white-space: normal;
+    }
+
+    .question-preview {
+      display: block;
+      white-space: normal;
+      word-break: break-word;
+      line-height: 1.5;
+      cursor: help;
+      padding: 0.2rem 0;
+    }
+
+    .blank-chip {
+      display: inline-block;
+      min-width: 105px;
+      padding: 0.12rem 0.58rem;
+      margin: 0 3px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #e0e7ff, #cffafe);
+      border: 1px solid rgba(99,102,241,0.18);
+      font-weight: 800;
+      color: #312e81;
+      box-shadow: inset 0 -2px 0 rgba(99,102,241,0.10);
+    }
+
+    .popover {
+      max-width: 360px;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.18);
+      box-shadow: 0 14px 30px rgba(15,23,42,0.16);
+    }
+
+    .popover-header {
+      font-weight: 800;
+      font-size: 0.88rem;
+      background: #eef2ff;
+    }
+
+    .popover-body {
+      font-size: 0.85rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    /* =========================================================
+       QUIZ MODAL
+       ========================================================= */
+    .quiz-modal .modal-dialog {
+      max-width: 780px;
+    }
+
+    .quiz-modal .modal-content {
+      border-radius: 18px;
+      border: none;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(15,23,42,0.28);
+    }
+
+    .quiz-modal .modal-header {
+      background: linear-gradient(135deg, #111827, #312e81);
+      color: white;
+      border: none;
+      padding: 0.7rem 0.85rem;
+    }
+
+    .quiz-modal .modal-body {
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+      padding: 0.75rem 0.85rem;
+      max-height: calc(100vh - 170px);
+      overflow-y: auto;
+    }
+
+    .quiz-modal .modal-footer {
+      background: white;
+      border-top: 1px solid #e2e8f0;
+      padding: 0.7rem 0.85rem;
+    }
+
+    .quiz-title {
+      font-size: 0.98rem;
+      font-weight: 800;
+      margin-bottom: 0.1rem;
+    }
+
+    .question-card {
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+      border: 1px solid #e2e8f0;
+      border-radius: 15px;
+      padding: 0.72rem 0.8rem;
+      box-shadow: 0 5px 16px rgba(15,23,42,0.05);
+      margin-bottom: 0.7rem;
+    }
+
+    .question-text {
+      font-size: clamp(0.94rem, 0.4vw + 0.86rem, 1.06rem);
+      font-weight: 700;
+      line-height: 1.5;
+      color: #0f172a;
+    }
+
+    .option-card {
+      border: 1px solid #dbeafe;
+      border-radius: 12px;
+      padding: 0.58rem 0.72rem;
+      background: white;
+      transition: all 0.18s ease;
+      cursor: pointer;
+      margin-bottom: 0.45rem;
+    }
+
+    .option-card:hover {
+      border-color: #818cf8;
+      box-shadow: 0 8px 18px rgba(99,102,241,0.08);
+      transform: translateY(-1px);
+    }
+
+    .option-card.selected {
+      border-color: #6366f1;
+      background: linear-gradient(180deg, #eef2ff, #f8fafc);
+      box-shadow: 0 8px 18px rgba(99,102,241,0.12);
+    }
+
+    .option-card.correct-option {
+      border-color: #22c55e !important;
+      background: #f0fdf4 !important;
+    }
+
+    .option-card.wrong-option {
+      border-color: #ef4444 !important;
+      background: #fef2f2 !important;
+    }
+
+    /* =========================================================
+       FEEDBACK AREA
+       ========================================================= */
+    .feedback-box {
+      border-radius: 13px;
+      padding: 0.75rem;
+      margin-top: 0.68rem;
+      border: 1px solid transparent;
+      max-height: 240px;
+      overflow-y: auto;
+      line-height: 1.45;
+    }
+
+    .feedback-correct {
+      background: var(--success-bg);
+      border-color: var(--success-border);
+    }
+
+    .feedback-wrong {
+      background: var(--danger-bg);
+      border-color: var(--danger-border);
+    }
+
+    .feedback-info {
+      background: var(--warning-bg);
+      border-color: var(--warning-border);
+    }
+
+    .meta-pill {
+      border-radius: 999px;
+      padding: 0.28rem 0.56rem;
+      font-size: 0.71rem;
+      font-weight: 700;
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.16);
+      color: white;
+      display: inline-flex;
+      gap: 0.3rem;
+      align-items: center;
+      margin-right: 0.28rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .stats-chip-dark {
+      border-radius: 999px;
+      padding: 0.32rem 0.6rem;
+      font-size: 0.73rem;
+      font-weight: 700;
+      background: #eef2ff;
+      color: #312e81;
+      border: 1px solid rgba(99,102,241,0.15);
+      display: inline-flex;
+      gap: 0.28rem;
+      align-items: center;
+      margin-right: 0.28rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .sticky-actions {
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      background: white;
+    }
+
+    #fibAnswerArea .form-control-lg {
+      min-height: calc(1.5em + 0.72rem + 2px);
+      padding: 0.42rem 0.72rem;
+      font-size: 0.98rem;
+      border-radius: 12px;
+    }
+
+    #choiceInstruction,
+    #fibAnswerArea .form-label {
+      font-size: 0.9rem;
+      margin-bottom: 0.38rem;
+    }
+
+    .quiz-modal .btn {
+      padding: 0.4rem 0.75rem;
+      font-size: 0.88rem;
+      border-radius: 12px;
+    }
+
+    /* =========================================================
+       RESPONSIVE
+       ========================================================= */
+    @media (max-width: 991.98px) {
+      .metric-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      .page-wrap { padding: 12px; }
+
+      .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .session-options-grid,
+      .type-filter-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .session-controls-card {
+        min-height: auto;
+      }
+
+      .hero-card,
+      .panel-card {
+        border-radius: 18px;
+      }
+
+      .question-cell {
+        max-width: 220px;
+      }
+
+      .quiz-modal .modal-dialog {
+        max-width: 96vw;
+        margin: 0.35rem auto;
+      }
+
+      .quiz-modal .modal-content {
+        border-radius: 16px;
+      }
+
+      .quiz-modal .modal-header,
+      .quiz-modal .modal-body,
+      .quiz-modal .modal-footer {
+        padding: 0.62rem 0.72rem;
+      }
+
+      .question-card {
+        padding: 0.62rem 0.68rem;
+      }
+
+      .quiz-modal .modal-footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .quiz-modal .modal-footer .btn-group-wrap,
+      .quiz-modal .modal-footer .btn-group-wrap-right {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+      }
+    }
+
+    @media (max-width: 479.98px) {
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .quiz-modal .modal-footer .btn-group-wrap,
+      .quiz-modal .modal-footer .btn-group-wrap-right {
+        grid-template-columns: 1fr;
+      }
+
+      .option-card {
+        padding: 0.56rem 0.65rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid page-wrap">
+    <div class="container-xxl">
+
+      <!-- =====================================================
+           HEADER
+           ===================================================== -->
+      <div class="hero-card">
+        <div>
+          <div class="hero-title">
+            <i class="bi bi-stars me-2"></i>Smart Quiz Studio
+          </div>
+          <div class="hero-subtitle">
+            Compact quiz runner with Fill in the Blank, Multiple Choice, and Multiple Select.
+            Upload a CSV bank, randomize questions, choose a subset size, switch between practice and exam mode,
+            review answers in practice mode, and keep progress + learning stats in localStorage.
+          </div>
+        </div>
+      </div>
+
+      <!-- =====================================================
+           DASHBOARD METRICS
+           ===================================================== -->
+      <div class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-label">Question Bank</div>
+          <div class="metric-value" id="bankCountValue">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Mastered</div>
+          <div class="metric-value" id="masteredCountValue">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Marked</div>
+          <div class="metric-value" id="markedCountValue">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Saved Session</div>
+          <div class="metric-value" id="resumeValue" style="font-size:1rem;">No session</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Last Quiz Setup</div>
+          <div class="metric-value" id="lastSetupValue" style="font-size:0.95rem;">-</div>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-1">
+
+        <!-- =====================================================
+             LEFT COLUMN: TWO CLEAR SECTIONS
+             1) Question Bank
+             2) Session Controls + Visible Buttons
+             ===================================================== -->
+        <div class="col-xl-5">
+          <div class="setup-stack">
+
+            <!-- =========================
+                 SECTION 1: QUESTION BANK
+                 ========================= -->
+            <div class="panel-card setup-panel">
+              <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                <div class="section-title mb-0">
+                  <i class="bi bi-cloud-arrow-up me-2"></i>Question Bank
+                </div>
+                <div class="top-chip">
+                  <i class="bi bi-filetype-csv"></i> CSV Upload
+                </div>
+              </div>
+
+              <div class="setup-box">
+                <div class="subtle-title">
+                  <i class="bi bi-folder2-open me-2"></i>Upload Questions
+                </div>
+
+                <div class="upload-box">
+                  <div class="upload-row">
+                    <!-- Hidden file input -->
+                    <input type="file" class="hidden-file-input" id="csvFileInput" accept=".csv" />
+
+                    <!-- Styled upload button -->
+                    <label for="csvFileInput" class="btn btn-upload mb-0">
+                      <i class="bi bi-upload me-2"></i>Upload Questions
+                    </label>
+
+                    <!-- Selected file display -->
+                    <div class="file-chip" id="selectedFileName">
+                      <i class="bi bi-file-earmark-text me-2"></i>No file selected
+                    </div>
+                  </div>
+
+                  <div class="small-muted mt-2">
+                    Supported columns:
+                    <span class="mono">id,type,question,options,answer,explanation,difficulty,tags</span>
+                  </div>
+                </div>
+
+                <div class="toggle-card mt-3">
+                  <div class="form-check form-switch">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      id="replaceOnImport"
+                      checked
+                    >
+                    <label class="form-check-label fw-semibold" for="replaceOnImport" id="replaceOnImportLabel">
+                      Replace Existing Bank
+                    </label>
+                  </div>
+                  <div class="small-muted mt-2">
+                    Enabled by default. A new upload replaces the existing bank immediately.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- =========================
+                 SECTION 2: SESSION CONTROLS
+                 Buttons are clearly visible here
+                 ========================= -->
+            <div class="panel-card setup-panel session-controls-card">
+              <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                <div class="section-title mb-0">
+                  <i class="bi bi-controller me-2"></i>Quiz Session Controls
+                </div>
+                <div class="top-chip">
+                  <i class="bi bi-play-circle"></i> Start Here
+                </div>
+              </div>
+
+              <div class="setup-box">
+                <div class="subtle-title">
+                  <i class="bi bi-sliders2 me-2"></i>Session Options
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Number of Questions</label>
+                  <input
+                    type="number"
+                    min="1"
+                    class="form-control"
+                    id="subsetCountInput"
+                    placeholder="Blank = all"
+                  >
+                  <div class="form-text">Use a subset from the current filtered question bank.</div>
+                </div>
+
+                <div class="session-options-grid mb-3">
+                  <div class="toggle-card">
+                    <div class="form-check form-switch">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="randomizeQuestions"
+                        checked
+                      >
+                      <label class="form-check-label fw-semibold" for="randomizeQuestions" id="randomizeLabel">
+                        Randomize Questions
+                      </label>
+                    </div>
+                    <div class="small-muted mt-2">
+                      Enabled by default. Questions start in shuffled order.
+                    </div>
+                  </div>
+
+                  <div class="toggle-card">
+                    <div class="form-check form-switch">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="quizModeToggle"
+                      >
+                      <label class="form-check-label fw-semibold" for="quizModeToggle" id="quizModeLabel">
+                        Practice Mode
+                      </label>
+                    </div>
+                    <div class="small-muted mt-2">
+                      Toggle ON for Exam Mode. Toggle OFF for Practice Mode.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="subtle-title mt-1">
+                  <i class="bi bi-funnel me-2"></i>Question Types for This Session
+                </div>
+                <div class="type-filter-grid">
+                  <div class="type-filter-card">
+                    <div class="form-check">
+                      <input class="form-check-input session-type-filter" type="checkbox" id="includeFIB" value="FIB" checked>
+                      <label class="form-check-label" for="includeFIB">
+                        <div class="type-filter-title">FIB</div>
+                        <div class="type-filter-help">Fill in the blank questions</div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="type-filter-card">
+                    <div class="form-check">
+                      <input class="form-check-input session-type-filter" type="checkbox" id="includeMCQ" value="MCQ" checked>
+                      <label class="form-check-label" for="includeMCQ">
+                        <div class="type-filter-title">MCQ</div>
+                        <div class="type-filter-help">Single-answer multiple choice</div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="type-filter-card">
+                    <div class="form-check">
+                      <input class="form-check-input session-type-filter" type="checkbox" id="includeMSQ" value="MSQ" checked>
+                      <label class="form-check-label" for="includeMSQ">
+                        <div class="type-filter-title">MSQ</div>
+                        <div class="type-filter-help">Multiple select questions</div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div class="small-muted mt-2">
+                  Start a session with only the checked question types.
+                </div>
+
+                <div class="mt-3 d-flex flex-wrap gap-2">
+                  <span class="top-chip"><i class="bi bi-shuffle"></i> Randomize On</span>
+                  <span class="top-chip"><i class="bi bi-filter-circle"></i> Subset Quiz</span>
+                  <span class="top-chip"><i class="bi bi-ui-checks-grid"></i> Type Filter</span>
+                  <span class="top-chip"><i class="bi bi-eye"></i> Reveal in Practice</span>
+                </div>
+
+                <!-- Visible action buttons -->
+                <div class="mt-4 actions-stack">
+                  <button class="btn btn-primary" id="startNewQuizBtn">
+                    <i class="bi bi-play-fill me-1"></i> Start New Quiz
+                  </button>
+
+                  <button class="btn btn-soft" id="resumeQuizBtn">
+                    <i class="bi bi-arrow-repeat me-1"></i> Resume Saved Quiz
+                  </button>
+
+                  <button class="btn btn-light border" id="exportCsvBtn">
+                    <i class="bi bi-download me-1"></i> Export CSV
+                  </button>
+
+                  <button class="btn btn-light border text-danger" id="resetProgressBtn">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Progress
+                  </button>
+
+                  <button class="btn btn-danger-soft" id="clearBankBtn">
+                    <i class="bi bi-trash3 me-1"></i> Clear All Questions and Session
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- =====================================================
+             RIGHT: QUESTION OVERVIEW
+             ===================================================== -->
+        <div class="col-xl-7">
+          <div class="panel-card">
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+              <div class="section-title mb-0">
+                <i class="bi bi-journal-check me-2"></i>Question Overview
+              </div>
+              <div class="top-chip">
+                <i class="bi bi-info-circle"></i> Hover a question to view answer
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <div class="overview-scroll">
+                <table class="table table-hover table-borderless mb-0 align-middle">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Type</th>
+                      <th>Questions</th>
+                      <th>Stats</th>
+                    </tr>
+                  </thead>
+                  <tbody id="questionTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================
+         QUIZ MODAL
+         ===================================================== -->
+    <div class="modal fade quiz-modal" id="quizModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div class="w-100">
+              <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-2">
+                <div>
+                  <div class="quiz-title">Compact Practice Mode</div>
+                  <div class="small" style="opacity:0.9;">
+                    Submit, reveal, mark, re-queue wrong answers, and resume later.
+                  </div>
+                </div>
+                <div class="text-lg-end">
+                  <span class="meta-pill"><i class="bi bi-list-ol"></i><span id="quizMetaIndex">Pos 0 / 0</span></span>
+                  <span class="meta-pill"><i class="bi bi-collection"></i><span id="quizMetaBase">Base 0</span></span>
+                  <span class="meta-pill"><i class="bi bi-hash"></i><span id="quizMetaId">ID: -</span></span>
+                  <span class="meta-pill"><i class="bi bi-trophy"></i><span id="quizMetaMastery">Mastery: 0</span></span>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn-close btn-close-white ms-2" data-bs-dismiss="modal"></button>
+          </div>
+
+          <div class="modal-body">
+            <div class="mb-2">
+              <span class="stats-chip-dark"><i class="bi bi-ui-checks-grid"></i><span id="quizTypeBadge">Type</span></span>
+              <span class="stats-chip-dark"><i class="bi bi-speedometer2"></i><span id="quizDifficultyBadge">Difficulty</span></span>
+              <span class="stats-chip-dark"><i class="bi bi-bullseye"></i><span id="quizAttemptsBadge">Attempts: 0</span></span>
+              <span class="stats-chip-dark"><i class="bi bi-check2-circle"></i><span id="quizCorrectBadge">Correct: 0</span></span>
+              <span class="stats-chip-dark"><i class="bi bi-lightning"></i><span id="quizStreakBadge">Streak: 0</span></span>
+              <span class="stats-chip-dark"><i class="bi bi-arrow-repeat"></i><span id="quizQueueBadge">Queue: 0</span></span>
+              <span class="stats-chip-dark"><i class="bi bi-hourglass-split"></i><span id="quizRemainingBadge">Remaining: 0</span></span>
+              <span class="stats-chip-dark"><i class="bi bi-send-check"></i><span id="quizAnsweredBadge">Answered: 0</span></span>
+              <span class="stats-chip-dark"><i class="bi bi-tags"></i><span id="quizTagBadge">Tags</span></span>
+              <span class="stats-chip-dark d-none" id="quizMarkedBadge"><i class="bi bi-bookmark-fill"></i>Marked</span>
+            </div>
+
+            <div class="question-card">
+              <div class="question-text" id="questionTextDisplay"></div>
+            </div>
+
+            <!-- FIB answer input -->
+            <div id="fibAnswerArea" class="mb-2 d-none">
+              <label class="form-label fw-semibold">Your Answer</label>
+              <input type="text" class="form-control form-control-lg" id="answerInput" autocomplete="off" />
+              <div class="form-text">
+                Matching is case-insensitive and tolerant of punctuation and extra spaces.
+              </div>
+            </div>
+
+            <!-- MCQ / MSQ answer area -->
+            <div id="choiceAnswerArea" class="mb-2 d-none">
+              <label class="form-label fw-semibold" id="choiceInstruction">Select one answer</label>
+              <div id="optionsContainer"></div>
+            </div>
+
+            <!-- Feedback container -->
+            <div id="feedbackArea" class="d-none"></div>
+          </div>
+
+          <div class="modal-footer sticky-actions">
+            <div class="btn-group-wrap d-grid d-md-flex gap-2">
+              <button class="btn btn-outline-secondary" id="prevBtn">
+                <i class="bi bi-arrow-left me-1"></i>Previous
+              </button>
+              <button class="btn btn-outline-secondary" id="skipBtn">
+                <i class="bi bi-skip-forward me-1"></i>Skip
+              </button>
+              <button class="btn btn-warning text-dark" id="markNextBtn">
+                <i class="bi bi-bookmark-plus me-1"></i>Mark & Next
+              </button>
+              <button class="btn btn-outline-dark" id="nextMarkedBtn">
+                <i class="bi bi-bookmarks me-1"></i>Next Marked
+              </button>
+            </div>
+
+            <div class="btn-group-wrap-right d-grid d-md-flex gap-2">
+              <button class="btn btn-info text-dark" id="revealAnswerBtn">
+                <i class="bi bi-eye me-1"></i>Reveal Answer
+              </button>
+              <button class="btn btn-success" id="submitBtn">
+                <i class="bi bi-send-check me-1"></i>Submit
+              </button>
+              <button class="btn btn-primary" id="nextBtn">
+                <i class="bi bi-arrow-right me-1"></i>Next
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Libraries -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    /* =========================================================
+       STORAGE KEYS
+       ========================================================= */
+    const STORAGE_KEYS = {
+      BANK: "quiz_bank_v10",
+      STATS: "quiz_stats_v10",
+      SESSION: "quiz_session_v11"
+    };
+
+    /* =========================================================
+       APP STATE
+       ========================================================= */
+    let questionBank = [];
+    let questionStats = {};
+    let quizSession = {
+      activeQueue: [],
+      currentIndex: 0,
+      markedIds: [],
+      lastOpenedAt: null,
+      submittedCount: 0,
+      settings: {
+        randomize: true,
+        subsetCount: null,
+        mode: "practice",
+        selectedTypes: ["FIB", "MCQ", "MSQ"]
+      },
+      baseQuestionIds: []
+    };
+
+    let currentSelectedOptions = [];
+    let quizModal = null;
+
+    /* =========================================================
+       DEFAULT STATS FACTORY
+       ========================================================= */
+    function defaultStats(id) {
+      return {
+        id,
+        attempts: 0,
+        correct: 0,
+        wrong: 0,
+        streak: 0,
+        bestStreak: 0,
+        mastery: 0,
+        marked: false,
+        lastResult: null,
+        lastAnswer: "",
+        seen: 0
+      };
+    }
+
+    /* =========================================================
+       SAVE / LOAD
+       ========================================================= */
+    function saveAll() {
+      localStorage.setItem(STORAGE_KEYS.BANK, JSON.stringify(questionBank));
+      localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(questionStats));
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(quizSession));
+      refreshOverview();
+    }
+
+    function createEmptySession() {
+      return {
+        activeQueue: [],
+        currentIndex: 0,
+        markedIds: [],
+        lastOpenedAt: null,
+        submittedCount: 0,
+        settings: {
+          randomize: true,
+          subsetCount: null,
+          mode: "practice",
+          selectedTypes: ["FIB", "MCQ", "MSQ"]
+        },
+        baseQuestionIds: []
+      };
+    }
+
+    function normalizeSessionState(session) {
+      const safeSession = session && typeof session === "object" ? session : createEmptySession();
+      const selectedTypes = Array.isArray(safeSession.settings?.selectedTypes) && safeSession.settings.selectedTypes.length
+        ? safeSession.settings.selectedTypes.filter(type => ["FIB", "MCQ", "MSQ"].includes(type))
+        : ["FIB", "MCQ", "MSQ"];
+
+      return {
+        activeQueue: Array.isArray(safeSession.activeQueue) ? safeSession.activeQueue : [],
+        currentIndex: Number.isInteger(safeSession.currentIndex) ? safeSession.currentIndex : 0,
+        markedIds: Array.isArray(safeSession.markedIds) ? safeSession.markedIds : [],
+        lastOpenedAt: safeSession.lastOpenedAt || null,
+        submittedCount: Number.isInteger(safeSession.submittedCount) ? safeSession.submittedCount : 0,
+        settings: {
+          randomize: safeSession.settings?.randomize !== false,
+          subsetCount: safeSession.settings?.subsetCount ? parseInt(safeSession.settings.subsetCount, 10) : null,
+          mode: safeSession.settings?.mode === "exam" ? "exam" : "practice",
+          selectedTypes: selectedTypes.length ? selectedTypes : ["FIB", "MCQ", "MSQ"]
+        },
+        baseQuestionIds: Array.isArray(safeSession.baseQuestionIds) ? safeSession.baseQuestionIds : []
+      };
+    }
+
+    function loadAll() {
+      try {
+        questionBank = JSON.parse(localStorage.getItem(STORAGE_KEYS.BANK) || "[]");
+      } catch {
+        questionBank = [];
+      }
+
+      try {
+        questionStats = JSON.parse(localStorage.getItem(STORAGE_KEYS.STATS) || "{}");
+      } catch {
+        questionStats = {};
+      }
+
+      try {
+        const savedSession = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSION) || JSON.stringify(createEmptySession()));
+        quizSession = normalizeSessionState(savedSession);
+      } catch {
+        quizSession = createEmptySession();
+      }
+
+      questionBank.forEach(q => {
+        if (!questionStats[q.id]) questionStats[q.id] = defaultStats(q.id);
+      });
+    }
+
+    /* =========================================================
+       UTILITIES
+       ========================================================= */
+    function createId() {
+      return "Q-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+    }
+
+    function escapeHtml(text) {
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function escapeAttr(text) {
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function normalizeText(str) {
+      return String(str || "")
+        .toLowerCase()
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function tokenize(str) {
+      return normalizeText(str).split(" ").filter(Boolean);
+    }
+
+    function renderQuestionWithBlank(text) {
+      return escapeHtml(text).replace(/___+/g, '<span class="blank-chip">_____</span>');
+    }
+
+    function getStats(id) {
+      if (!questionStats[id]) questionStats[id] = defaultStats(id);
+      return questionStats[id];
+    }
+
+    function getQuestionById(id) {
+      return questionBank.find(q => q.id === id);
+    }
+
+    function getCurrentQuestion() {
+      if (!quizSession.activeQueue.length) return null;
+      return getQuestionById(quizSession.activeQueue[quizSession.currentIndex]);
+    }
+
+    function calculateMastery(stats) {
+      let mastery = 0;
+      mastery += Math.min(stats.correct * 15, 45);
+      mastery += Math.min(stats.streak * 10, 40);
+      mastery -= Math.min(stats.wrong * 8, 40);
+      return Math.max(0, Math.min(100, mastery));
+    }
+
+    function normalizeAnswerIndexes(answerStr) {
+      return String(answerStr || "")
+        .split(",")
+        .map(x => parseInt(x.trim(), 10))
+        .filter(x => !isNaN(x))
+        .sort((a, b) => a - b);
+    }
+
+    function isFibCorrect(userAnswer, correctAnswer) {
+      const u = normalizeText(userAnswer);
+      const c = normalizeText(correctAnswer);
+
+      if (!u || !c) return false;
+      if (u === c) return true;
+
+      const uTokens = tokenize(userAnswer);
+      const cTokens = tokenize(correctAnswer);
+
+      if (!uTokens.length || !cTokens.length) return false;
+
+      const allCorrectWordsPresent = cTokens.every(tok => uTokens.includes(tok));
+      if (allCorrectWordsPresent) return true;
+
+      const allUserWordsInsideCorrect = uTokens.every(tok => cTokens.includes(tok));
+      if (allUserWordsInsideCorrect && uTokens.length >= Math.max(1, Math.ceil(cTokens.length * 0.6))) {
+        return true;
+      }
+
+      return false;
+    }
+
+    function isMcqCorrect(selectedIndex, correctAnswer) {
+      return parseInt(selectedIndex, 10) === parseInt(correctAnswer, 10);
+    }
+
+    function isMsqCorrect(selectedIndexes, correctAnswer) {
+      const a = [...selectedIndexes].sort((x, y) => x - y);
+      const b = normalizeAnswerIndexes(correctAnswer);
+      if (a.length !== b.length) return false;
+      return a.every((val, idx) => val === b[idx]);
+    }
+
+    function getChoiceOptions(q) {
+      if (!q.options) return [];
+      if (Array.isArray(q.options)) return q.options;
+      return String(q.options).split("|").map(x => x.trim()).filter(Boolean);
+    }
+
+    function shuffleArray(arr) {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function sortQuestionsForSession(bank) {
+      return [...bank].sort((a, b) => {
+        const sa = getStats(a.id);
+        const sb = getStats(b.id);
+
+        if (sa.mastery !== sb.mastery) return sa.mastery - sb.mastery;
+        if ((sa.marked ? 1 : 0) !== (sb.marked ? 1 : 0)) return (sb.marked ? 1 : 0) - (sa.marked ? 1 : 0);
+        return sa.correct - sb.correct;
+      });
+    }
+
+    function syncModeToggleLabel() {
+      const isExam = $("#quizModeToggle").is(":checked");
+      $("#quizModeLabel").text(isExam ? "Exam Mode" : "Practice Mode");
+    }
+
+    function syncReplaceToggleLabel() {
+      const isOn = $("#replaceOnImport").is(":checked");
+      $("#replaceOnImportLabel").text(isOn ? "Replace Existing Bank" : "Append to Existing Bank");
+    }
+
+    function syncRandomizeLabel() {
+      const isOn = $("#randomizeQuestions").is(":checked");
+      $("#randomizeLabel").text(isOn ? "Randomize Questions" : "Weak-first Order");
+    }
+
+
+    function getSelectedQuestionTypesFromControls() {
+      return $(".session-type-filter:checked").map(function() {
+        return $(this).val();
+      }).get();
+    }
+
+    function ensureAtLeastOneTypeSelected() {
+      const selectedTypes = getSelectedQuestionTypesFromControls();
+      if (selectedTypes.length) return true;
+
+      alert("Select at least one question type: FIB, MCQ, or MSQ.");
+      $("#includeFIB").prop("checked", true);
+      return false;
+    }
+
+    function applySelectedTypesToControls(selectedTypes) {
+      const safeTypes = Array.isArray(selectedTypes) && selectedTypes.length ? selectedTypes : ["FIB", "MCQ", "MSQ"];
+      $(".session-type-filter").prop("checked", false);
+      safeTypes.forEach(type => {
+        $(`.session-type-filter[value="${type}"]`).prop("checked", true);
+      });
+    }
+
+    function updateSelectedFileName(name) {
+      $("#selectedFileName").html(
+        name
+          ? `<i class="bi bi-file-earmark-check me-2"></i>${escapeHtml(name)}`
+          : `<i class="bi bi-file-earmark-text me-2"></i>No file selected`
+      );
+    }
+
+    /* =========================================================
+       SESSION BUILDING
+       ========================================================= */
+    function buildFreshSession() {
+      const rawSubset = parseInt($("#subsetCountInput").val(), 10);
+      const subsetCount = Number.isInteger(rawSubset) && rawSubset > 0 ? rawSubset : null;
+      const randomize = $("#randomizeQuestions").is(":checked");
+      const mode = $("#quizModeToggle").is(":checked") ? "exam" : "practice";
+      const selectedTypes = getSelectedQuestionTypesFromControls();
+
+      let pool = questionBank.filter(q => selectedTypes.includes((q.type || "FIB").toUpperCase()));
+      pool = randomize ? shuffleArray(pool) : sortQuestionsForSession(pool);
+
+      if (subsetCount && subsetCount < pool.length) {
+        pool = pool.slice(0, subsetCount);
+      }
+
+      const ids = pool.map(q => q.id);
+
+      quizSession.activeQueue = [...ids];
+      quizSession.baseQuestionIds = [...ids];
+      quizSession.currentIndex = 0;
+      quizSession.markedIds = Object.values(questionStats).filter(s => s.marked).map(s => s.id);
+      quizSession.lastOpenedAt = new Date().toISOString();
+      quizSession.submittedCount = 0;
+      quizSession.settings = {
+        randomize,
+        subsetCount: subsetCount || null,
+        mode,
+        selectedTypes: [...selectedTypes]
+      };
+
+      saveAll();
+    }
+
+    function getSessionCounts() {
+      const queueLength = quizSession.activeQueue.length;
+      const baseCount = (quizSession.baseQuestionIds || []).length;
+      const position = queueLength ? quizSession.currentIndex + 1 : 0;
+      const remaining = queueLength ? Math.max(queueLength - position, 0) : 0;
+      const answered = quizSession.submittedCount || 0;
+
+      return {
+        queueLength,
+        baseCount,
+        position,
+        remaining,
+        answered
+      };
+    }
+
+    function getReadableCorrectAnswer(q) {
+      const type = q.type || "FIB";
+      if (type === "FIB") return q.answer;
+
+      const options = getChoiceOptions(q);
+
+      if (type === "MCQ") {
+        const idx = parseInt(q.answer, 10);
+        return `Option ${idx}: ${options[idx - 1] || ""}`;
+      }
+
+      if (type === "MSQ") {
+        return normalizeAnswerIndexes(q.answer)
+          .map(i => `Option ${i}: ${options[i - 1] || ""}`)
+          .join(" | ");
+      }
+
+      return q.answer;
+    }
+
+    /* =========================================================
+       QUESTION OVERVIEW
+       ========================================================= */
+    function initQuestionPopovers() {
+      document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+        new bootstrap.Popover(el);
+      });
+    }
+
+    function refreshOverview() {
+      $("#bankCountValue").text(questionBank.length);
+
+      const mastered = questionBank.filter(q => getStats(q.id).mastery >= 80).length;
+      const marked = questionBank.filter(q => getStats(q.id).marked).length;
+
+      $("#masteredCountValue").text(mastered);
+      $("#markedCountValue").text(marked);
+
+      const resumeText = quizSession.activeQueue && quizSession.activeQueue.length
+        ? `${Math.min(quizSession.currentIndex + 1, quizSession.activeQueue.length)}/${quizSession.activeQueue.length}`
+        : "No session";
+      $("#resumeValue").text(resumeText);
+
+      const selectedTypeText = (quizSession.settings?.selectedTypes || ["FIB", "MCQ", "MSQ"]).join("/");
+      const setupText = quizSession.activeQueue && quizSession.activeQueue.length
+        ? `${quizSession.settings?.mode || "practice"} • ${quizSession.settings?.randomize ? "Random" : "Weak-first"} • ${selectedTypeText} • ${quizSession.settings?.subsetCount || (quizSession.baseQuestionIds || []).length || quizSession.activeQueue.length} Q`
+        : "-";
+      $("#lastSetupValue").text(setupText);
+
+      const tbody = $("#questionTableBody");
+      tbody.empty();
+
+      if (!questionBank.length) {
+        tbody.append('<tr><td colspan="4" class="text-center text-muted py-4">No questions in bank</td></tr>');
+        $("#resumeQuizBtn").prop("disabled", true);
+        return;
+      }
+
+      questionBank.forEach(q => {
+        const s = getStats(q.id);
+        const popText = `Answer: ${getReadableCorrectAnswer(q)}\n\nExplanation: ${q.explanation || "No explanation provided."}`;
+
+        tbody.append(`
+          <tr>
+            <td class="fw-semibold">${escapeHtml(q.id)}</td>
+            <td><span class="badge text-bg-light border">${escapeHtml(q.type || "FIB")}</span></td>
+            <td class="question-cell">
+              <span
+                class="question-preview"
+                data-bs-toggle="popover"
+                data-bs-trigger="hover focus"
+                data-bs-placement="left"
+                data-bs-title="Review Answer"
+                data-bs-content="${escapeAttr(popText)}"
+              >${escapeHtml(q.question)}</span>
+            </td>
+            <td class="small">
+              A:${s.attempts}<br>
+              C:${s.correct}<br>
+              M:${s.mastery}${s.marked ? '<br><span class="text-warning fw-semibold">Marked</span>' : ''}
+            </td>
+          </tr>
+        `);
+      });
+
+      initQuestionPopovers();
+
+      const hasSession = quizSession.activeQueue && quizSession.activeQueue.length > 0;
+      $("#resumeQuizBtn").prop("disabled", !hasSession);
+    }
+
+    /* =========================================================
+       QUIZ MODAL RENDERING
+       ========================================================= */
+    function renderChoiceOptions(q) {
+      const options = getChoiceOptions(q);
+      const type = q.type;
+      const container = $("#optionsContainer");
+      container.empty();
+
+      options.forEach((opt, idx) => {
+        const index = idx + 1;
+        const checked = currentSelectedOptions.includes(index);
+
+        container.append(`
+          <div class="option-card ${checked ? 'selected' : ''}" data-index="${index}">
+            <div class="d-flex align-items-start gap-3">
+              <div class="form-check mt-1">
+                <input
+                  class="form-check-input option-input"
+                  type="${type === 'MSQ' ? 'checkbox' : 'radio'}"
+                  name="quizOption"
+                  data-index="${index}"
+                  ${checked ? 'checked' : ''}
+                >
+              </div>
+              <div>
+                <div class="fw-bold mb-1">Option ${index}</div>
+                <div>${escapeHtml(opt)}</div>
+              </div>
+            </div>
+          </div>
+        `);
+      });
+    }
+
+    function updateQuizHeaderCounts() {
+      const counts = getSessionCounts();
+      $("#quizMetaIndex").text(`Pos ${counts.position} / ${counts.queueLength}`);
+      $("#quizMetaBase").text(`Base ${counts.baseCount}`);
+      $("#quizQueueBadge").text(`Queue: ${counts.queueLength}`);
+      $("#quizRemainingBadge").text(`Remaining: ${counts.remaining}`);
+      $("#quizAnsweredBadge").text(`Answered: ${counts.answered}`);
+    }
+
+    function applyQuizModeUI() {
+      const mode = quizSession.settings?.mode || "practice";
+
+      if (mode === "exam") {
+        $(".quiz-title").text("Compact Exam Mode");
+        $("#revealAnswerBtn").addClass("d-none");
+      } else {
+        $(".quiz-title").text("Compact Practice Mode");
+        $("#revealAnswerBtn").removeClass("d-none");
+      }
+    }
+
+    function loadQuestionIntoModal() {
+      const q = getCurrentQuestion();
+      if (!q) {
+        $("#questionTextDisplay").html('<div class="alert alert-info mb-0">No questions available.</div>');
+        return;
+      }
+
+      const s = getStats(q.id);
+      s.seen += 1;
+      currentSelectedOptions = [];
+
+      applyQuizModeUI();
+      updateQuizHeaderCounts();
+
+      $("#quizMetaId").text(`ID: ${q.id}`);
+      $("#quizMetaMastery").text(`Mastery: ${s.mastery}`);
+      $("#quizTypeBadge").text(q.type || "FIB");
+      $("#quizDifficultyBadge").text(q.difficulty || "Medium");
+      $("#quizAttemptsBadge").text(`Attempts: ${s.attempts}`);
+      $("#quizCorrectBadge").text(`Correct: ${s.correct}`);
+      $("#quizStreakBadge").text(`Streak: ${s.streak}`);
+      $("#quizTagBadge").text((q.tags || "").trim() || "No tags");
+
+      if (s.marked) {
+        $("#quizMarkedBadge").removeClass("d-none");
+      } else {
+        $("#quizMarkedBadge").addClass("d-none");
+      }
+
+      if ((q.type || "FIB") === "FIB") {
+        $("#questionTextDisplay").html(renderQuestionWithBlank(q.question));
+        $("#fibAnswerArea").removeClass("d-none");
+        $("#choiceAnswerArea").addClass("d-none");
+        $("#answerInput").val(s.lastAnswer || "");
+      } else {
+        $("#questionTextDisplay").html(escapeHtml(q.question));
+        $("#fibAnswerArea").addClass("d-none");
+        $("#choiceAnswerArea").removeClass("d-none");
+        $("#choiceInstruction").text((q.type === "MSQ") ? "Select all correct answers" : "Select one answer");
+        renderChoiceOptions(q);
+      }
+
+      $("#feedbackArea").addClass("d-none").empty();
+      saveAll();
+
+      setTimeout(() => {
+        if ((q.type || "FIB") === "FIB") $("#answerInput").trigger("focus");
+      }, 90);
+    }
+
+    function highlightChoiceReview(q) {
+      const correctIndexes = q.type === "MCQ"
+        ? [parseInt(q.answer, 10)]
+        : normalizeAnswerIndexes(q.answer);
+
+      $(".option-card").each(function() {
+        const idx = parseInt($(this).attr("data-index"), 10);
+
+        if (correctIndexes.includes(idx)) {
+          $(this).addClass("correct-option");
+        } else if (currentSelectedOptions.includes(idx) && !correctIndexes.includes(idx)) {
+          $(this).addClass("wrong-option");
+        }
+      });
+    }
+
+    function showFeedback(mode, q, statsObj, userAnswerDisplay) {
+      let cls = "feedback-box feedback-info";
+      let title = "Answer Revealed";
+
+      if (mode === "correct") {
+        cls = "feedback-box feedback-correct";
+        title = "Correct";
+      } else if (mode === "wrong") {
+        cls = "feedback-box feedback-wrong";
+        title = "Incorrect";
+      }
+
+      $("#feedbackArea")
+        .removeClass("d-none")
+        .html(`
+          <div class="${cls}">
+            <h6 class="fw-bold mb-2">${title}</h6>
+            <div><strong>Your answer:</strong> ${escapeHtml(userAnswerDisplay || "(blank)")}</div>
+            <div><strong>Correct answer:</strong> ${escapeHtml(getReadableCorrectAnswer(q))}</div>
+            <div><strong>Explanation:</strong> ${escapeHtml(q.explanation || "No explanation provided.")}</div>
+            <div class="mt-2 small text-muted">
+              Attempts: ${statsObj.attempts} • Correct: ${statsObj.correct} • Streak: ${statsObj.streak} • Mastery: ${statsObj.mastery}
+            </div>
+          </div>
+        `);
+
+      if (q.type === "MCQ" || q.type === "MSQ") {
+        highlightChoiceReview(q);
+      }
+    }
+
+    /* =========================================================
+       ANSWER COLLECTION
+       ========================================================= */
+    function collectUserAnswer(q) {
+      const type = q.type || "FIB";
+
+      if (type === "FIB") {
+        const val = $("#answerInput").val().trim();
+        return {
+          raw: val,
+          display: val,
+          correct: isFibCorrect(val, q.answer)
+        };
+      }
+
+      if (type === "MCQ") {
+        const selected = currentSelectedOptions[0] || null;
+        const options = getChoiceOptions(q);
+        const display = selected ? `Option ${selected}: ${options[selected - 1] || ""}` : "";
+        return {
+          raw: selected,
+          display,
+          correct: isMcqCorrect(selected, q.answer)
+        };
+      }
+
+      if (type === "MSQ") {
+        const options = getChoiceOptions(q);
+        const display = currentSelectedOptions.length
+          ? currentSelectedOptions.map(i => `Option ${i}: ${options[i - 1] || ""}`).join(" | ")
+          : "";
+        return {
+          raw: [...currentSelectedOptions],
+          display,
+          correct: isMsqCorrect(currentSelectedOptions, q.answer)
+        };
+      }
+
+      return { raw: "", display: "", correct: false };
+    }
+
+    /* =========================================================
+       QUIZ ACTIONS
+       ========================================================= */
+    function submitAnswer() {
+      const q = getCurrentQuestion();
+      if (!q) return;
+
+      const statsObj = getStats(q.id);
+      const result = collectUserAnswer(q);
+
+      statsObj.attempts += 1;
+      statsObj.lastAnswer = Array.isArray(result.raw) ? result.raw.join(",") : String(result.raw || "");
+      statsObj.lastResult = result.correct ? "correct" : "wrong";
+      quizSession.submittedCount = (quizSession.submittedCount || 0) + 1;
+
+      if (result.correct) {
+        statsObj.correct += 1;
+        statsObj.streak += 1;
+        statsObj.bestStreak = Math.max(statsObj.bestStreak, statsObj.streak);
+        statsObj.mastery = calculateMastery(statsObj);
+
+        if (statsObj.mastery >= 80) {
+          statsObj.marked = false;
+          quizSession.markedIds = quizSession.markedIds.filter(id => id !== q.id);
+        }
+
+        showFeedback("correct", q, statsObj, result.display);
+      } else {
+        statsObj.wrong += 1;
+        statsObj.streak = 0;
+        statsObj.mastery = calculateMastery(statsObj);
+
+        /* Re-queue wrong answer to appear later */
+        const insertPos = Math.min(quizSession.activeQueue.length, quizSession.currentIndex + 3);
+        quizSession.activeQueue.splice(insertPos, 0, q.id);
+
+        showFeedback("wrong", q, statsObj, result.display);
+      }
+
+      updateQuizHeaderCounts();
+      saveAll();
+      refreshOverview();
+    }
+
+    function revealAnswer() {
+      const mode = quizSession.settings?.mode || "practice";
+      if (mode === "exam") return;
+
+      const q = getCurrentQuestion();
+      if (!q) return;
+
+      const statsObj = getStats(q.id);
+      const result = collectUserAnswer(q);
+      showFeedback("reveal", q, statsObj, result.display);
+    }
+
+    function moveNext() {
+      if (!quizSession.activeQueue.length) return;
+
+      if (quizSession.currentIndex < quizSession.activeQueue.length - 1) {
+        quizSession.currentIndex += 1;
+      } else {
+        const nextIdx = quizSession.activeQueue.findIndex(id => getStats(id).mastery < 80);
+        quizSession.currentIndex = nextIdx >= 0 ? nextIdx : Math.max(0, quizSession.activeQueue.length - 1);
+      }
+
+      loadQuestionIntoModal();
+    }
+
+    function movePrevious() {
+      if (!quizSession.activeQueue.length) return;
+      if (quizSession.currentIndex > 0) {
+        quizSession.currentIndex -= 1;
+      }
+      loadQuestionIntoModal();
+    }
+
+    function skipQuestion() {
+      moveNext();
+    }
+
+    function markAndNext() {
+      const q = getCurrentQuestion();
+      if (!q) return;
+
+      const statsObj = getStats(q.id);
+      statsObj.marked = true;
+
+      if (!quizSession.markedIds.includes(q.id)) {
+        quizSession.markedIds.push(q.id);
+      }
+
+      saveAll();
+      moveNext();
+    }
+
+    function nextMarked() {
+      if (!quizSession.activeQueue.length) return;
+
+      const currentPos = quizSession.currentIndex;
+
+      for (let i = currentPos + 1; i < quizSession.activeQueue.length; i++) {
+        const id = quizSession.activeQueue[i];
+        if (getStats(id).marked) {
+          quizSession.currentIndex = i;
+          loadQuestionIntoModal();
+          return;
+        }
+      }
+
+      for (let i = 0; i < currentPos; i++) {
+        const id = quizSession.activeQueue[i];
+        if (getStats(id).marked) {
+          quizSession.currentIndex = i;
+          loadQuestionIntoModal();
+          return;
+        }
+      }
+
+      alert("No marked questions found.");
+    }
+
+    /* =========================================================
+       VALIDATION
+       ========================================================= */
+    function validateQuestion(q) {
+      const type = q.type || "FIB";
+
+      if (!q.question || !q.answer) return "Question and answer are required.";
+
+      if (type === "FIB" && !q.question.includes("___")) {
+        return 'FIB question must contain blank placeholder like "___".';
+      }
+
+      if (type === "MCQ" || type === "MSQ") {
+        const opts = getChoiceOptions(q);
+        if (opts.length < 2) return "MCQ/MSQ require at least 2 options.";
+        if (!q.options) return "MCQ/MSQ options are required.";
+
+        if (type === "MCQ") {
+          const idx = parseInt(q.answer, 10);
+          if (isNaN(idx) || idx < 1 || idx > opts.length) return "MCQ answer must be a valid option number.";
+        }
+
+        if (type === "MSQ") {
+          const indexes = normalizeAnswerIndexes(q.answer);
+          if (!indexes.length) return "MSQ answer must contain valid option numbers, e.g. 1,3.";
+          const invalid = indexes.some(i => i < 1 || i > opts.length);
+          if (invalid) return "MSQ answer has invalid option number(s).";
+        }
+      }
+
+      return null;
+    }
+
+    /* =========================================================
+       CSV EXPORT / IMPORT
+       ========================================================= */
+    function toCsvRow(values) {
+      return values.map(v => {
+        const s = String(v ?? "");
+        if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+          return '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+      }).join(",");
+    }
+
+    function exportCsv() {
+      const header = ["id","type","question","options","answer","explanation","difficulty","tags"];
+      const rows = questionBank.map(q => [
+        q.id, q.type || "FIB", q.question, q.options || "", q.answer, q.explanation || "", q.difficulty || "Medium", q.tags || ""
+      ]);
+
+      const csv = [header.join(",")]
+        .concat(rows.map(r => toCsvRow(r)))
+        .join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "quiz_bank.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function parseCsvLine(line) {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        const next = line[i + 1];
+
+        if (ch === '"') {
+          if (inQuotes && next === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (ch === "," && !inQuotes) {
+          result.push(current);
+          current = "";
+        } else {
+          current += ch;
+        }
+      }
+
+      result.push(current);
+      return result;
+    }
+
+    function parseCsv(text) {
+      const lines = text
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .split("\n")
+        .filter(l => l.trim() !== "");
+
+      if (!lines.length) return [];
+
+      const header = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+      const rows = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const obj = {};
+        header.forEach((h, idx) => obj[h] = (cols[idx] || "").trim());
+        rows.push(obj);
+      }
+
+      return rows;
+    }
+
+    function importCsv(file) {
+      if (!file) {
+        alert("Upload questions first.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const rows = parseCsv(e.target.result);
+          let imported = 0;
+          const replaceExisting = $("#replaceOnImport").is(":checked");
+
+          if (replaceExisting) {
+            questionBank = [];
+            questionStats = {};
+            quizSession = createEmptySession();
+          }
+
+          rows.forEach(r => {
+            const q = {
+              id: r.id || createId(),
+              type: (r.type || "FIB").toUpperCase(),
+              question: r.question || "",
+              options: r.options || "",
+              answer: r.answer || "",
+              explanation: r.explanation || "",
+              difficulty: r.difficulty || "Medium",
+              tags: r.tags || ""
+            };
+
+            if (questionBank.some(x => x.id === q.id)) return;
+
+            const err = validateQuestion(q);
+            if (err) return;
+
+            questionBank.push(q);
+            if (!questionStats[q.id]) questionStats[q.id] = defaultStats(q.id);
+            imported++;
+          });
+
+          saveAll();
+          refreshOverview();
+
+          $("#quizModeToggle").prop("checked", (quizSession.settings?.mode || "practice") === "exam");
+          $("#randomizeQuestions").prop("checked", quizSession.settings?.randomize !== false);
+          syncModeToggleLabel();
+          syncReplaceToggleLabel();
+          syncRandomizeLabel();
+
+          alert(`Imported ${imported} questions.`);
+        } catch (err) {
+          console.error(err);
+          alert("CSV import failed.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    /* =========================================================
+       RESET / CLEAR
+       ========================================================= */
+    function clearEntireBank() {
+      if (!confirm("This will delete all questions, stats, and saved quiz session. Continue?")) return;
+
+      questionBank = [];
+      questionStats = {};
+      quizSession = createEmptySession();
+
+      localStorage.removeItem(STORAGE_KEYS.BANK);
+      localStorage.removeItem(STORAGE_KEYS.STATS);
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
+
+      refreshOverview();
+      syncModeToggleLabel();
+      syncReplaceToggleLabel();
+      syncRandomizeLabel();
+      updateSelectedFileName("");
+      alert("All questions and saved progress were cleared.");
+    }
+
+    function resetProgress() {
+      if (!confirm("Reset quiz progress and stats? Question bank will remain.")) return;
+
+      questionStats = {};
+      questionBank.forEach(q => {
+        questionStats[q.id] = defaultStats(q.id);
+      });
+
+      quizSession = createEmptySession();
+
+      saveAll();
+      syncModeToggleLabel();
+      syncReplaceToggleLabel();
+      syncRandomizeLabel();
+    }
+
+    /* =========================================================
+       START / RESUME
+       ========================================================= */
+    function startNewQuiz() {
+      if (!questionBank.length) {
+        alert("Upload questions first.");
+        return;
+      }
+
+      if (!ensureAtLeastOneTypeSelected()) {
+        applySelectedTypesToControls(["FIB"]);
+        return;
+      }
+
+      buildFreshSession();
+
+      if (!quizSession.activeQueue.length) {
+        alert("No questions available for the chosen setup and selected question types.");
+        return;
+      }
+
+      loadQuestionIntoModal();
+      quizModal.show();
+    }
+
+    function resumeQuiz() {
+      if (!quizSession.activeQueue.length) {
+        alert("No saved quiz session found.");
+        return;
+      }
+
+      $("#quizModeToggle").prop("checked", (quizSession.settings?.mode || "practice") === "exam");
+      $("#randomizeQuestions").prop("checked", !!quizSession.settings?.randomize);
+      $("#subsetCountInput").val(quizSession.settings?.subsetCount || "");
+      applySelectedTypesToControls(quizSession.settings?.selectedTypes);
+      syncModeToggleLabel();
+      syncRandomizeLabel();
+
+      loadQuestionIntoModal();
+      quizModal.show();
+    }
+
+    /* =========================================================
+       OPTION CLICK HANDLING
+       ========================================================= */
+    function toggleOption(index) {
+      const q = getCurrentQuestion();
+      if (!q) return;
+
+      if (q.type === "MCQ") {
+        currentSelectedOptions = [index];
+      } else if (q.type === "MSQ") {
+        if (currentSelectedOptions.includes(index)) {
+          currentSelectedOptions = currentSelectedOptions.filter(x => x !== index);
+        } else {
+          currentSelectedOptions.push(index);
+        }
+      }
+
+      renderChoiceOptions(q);
+    }
+
+    /* =========================================================
+       APP INIT
+       ========================================================= */
+    $(function() {
+      quizModal = new bootstrap.Modal(document.getElementById("quizModal"));
+      loadAll();
+
+      /* Restore saved state into controls */
+      $("#quizModeToggle").prop("checked", (quizSession.settings?.mode || "practice") === "exam");
+      $("#randomizeQuestions").prop("checked", quizSession.settings?.randomize !== false);
+      $("#subsetCountInput").val(quizSession.settings?.subsetCount || "");
+      applySelectedTypesToControls(quizSession.settings?.selectedTypes);
+      $("#replaceOnImport").prop("checked", true);
+
+      syncModeToggleLabel();
+      syncReplaceToggleLabel();
+      syncRandomizeLabel();
+      updateSelectedFileName("");
+
+      refreshOverview();
+
+      /* Visible action buttons */
+      $("#startNewQuizBtn").on("click", startNewQuiz);
+      $("#resumeQuizBtn").on("click", resumeQuiz);
+      $("#exportCsvBtn").on("click", exportCsv);
+      $("#resetProgressBtn").on("click", resetProgress);
+      $("#clearBankBtn").on("click", clearEntireBank);
+
+      /* File upload */
+      $("#csvFileInput").on("change", function() {
+        const file = this.files[0];
+        updateSelectedFileName(file ? file.name : "");
+        if (file) {
+          importCsv(file);
+        }
+      });
+
+      /* Toggles */
+      $("#quizModeToggle").on("change", function() {
+        syncModeToggleLabel();
+      });
+
+      $("#replaceOnImport").on("change", function() {
+        syncReplaceToggleLabel();
+      });
+
+      $("#randomizeQuestions").on("change", function() {
+        syncRandomizeLabel();
+      });
+
+      $(document).on("change", ".session-type-filter", function() {
+        ensureAtLeastOneTypeSelected();
+      });
+
+      /* Quiz controls */
+      $("#submitBtn").on("click", submitAnswer);
+      $("#revealAnswerBtn").on("click", revealAnswer);
+      $("#nextBtn").on("click", moveNext);
+      $("#prevBtn").on("click", movePrevious);
+      $("#skipBtn").on("click", skipQuestion);
+      $("#markNextBtn").on("click", markAndNext);
+      $("#nextMarkedBtn").on("click", nextMarked);
+
+      /* Enter key submits for FIB */
+      $("#answerInput").on("keypress", function(e) {
+        if (e.which === 13) submitAnswer();
+      });
+
+      /* Option card click support */
+      $(document).on("click", ".option-card", function(e) {
+        if ($(e.target).hasClass("option-input")) return;
+        const idx = parseInt($(this).attr("data-index"), 10);
+        toggleOption(idx);
+      });
+
+      $(document).on("change", ".option-input", function() {
+        const idx = parseInt($(this).attr("data-index"), 10);
+        toggleOption(idx);
+      });
+    });
+  </script>
+</body>
+</html>
