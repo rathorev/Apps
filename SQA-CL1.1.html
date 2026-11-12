@@ -188,7 +188,7 @@ function nm(){const s=S.sess,L=s.queue.length;for(let d=1;d<L;d++){const p=(s.id
 function redo(){const s=S.sess;delete s.ans[s.idx];save();rq()}
 function hint(){S.sess.hint=!S.sess.hint;rq()}
 function pause(){const s=S.sess;if(!s.paused&&s.mode=='exam'&&new Set(s.queue).size<=30)return toast('Exam Mode allows pausing only when more than 30 questions are selected','warn');s.paused=!s.paused;save();rq()}
-async function fin(){const s=S.sess;if(!all(s)&&!await ask('End session?','Unanswered questions count as incorrect. You can review everything in the results.','End &amp; see results'))return;finish()}
+async function fin(){const s=S.sess;if(!all(s)&&!await ask('End session?','Unanswered questions count as incorrect. You can review everything in the results.','End & See Results'))return;finish()}
 function finish(){const s=S.sess;s.done=true;s.paused=false;save();$('#q').innerHTML='';home();results()}
 function results(){const s=S.sess,R=[...new Set(s.queue)].map(id=>{const q=B(id),d=s.queue.map((x,p)=>x===id?s.ans[p]:null).filter(a=>a?.done);return{q,l:d[d.length-1],ok:d.some(a=>a.ok)}}).filter(r=>r.q);
 const FL=flagged(),ok=R.filter(r=>r.ok).length,wr=R.filter(r=>!r.ok).map(r=>r.q.id),pc=R.length?Math.round(ok/R.length*100):0;
